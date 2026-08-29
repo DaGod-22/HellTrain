@@ -276,6 +276,9 @@ try {
           if (cur === gp && gp.cards) { gp._pickCard(0); guarded++; }
           if (cur === gp && gp.routeCards) { gp._pickRoute(0); guarded++; } // route overlay auto-picks
           if (cur === gp && gp.wPick) { gp._pickWeapon(0); guarded++; }     // weapon choice auto-picks
+          // keep the bot alive: the fork/transition asserts must not flake on RNG damage
+          if (cur === gp && gp.player?.alive) { gp.player.hp = gp.player.maxHp; gp.player.shield = gp.player.shield || 0; }
+          if (cur === gp && gp.train && !gp.train.dead) gp.train.hp = gp.train.maxHp;
         }
       };
       stepRun(60 * 8); // 8s of waves
@@ -283,7 +286,7 @@ try {
       // force boss + kill it, then fast-forward to the sector fork
       gp._spawnBoss();
       stepRun(30);
-      if (gp.boss) { gp.boss.hp = 1; }
+      if (gp.boss) { gp.boss.hp = 1; gp.dealDamage(gp.boss, 1, {}); } // ultimate is manual in v1.7 — kill deterministically
       stepRun(60 * 6);
       if (E._error) fail('scripted run errored: ' + E._error.message);
       if (!gp.bossDefeated && gp.boss) fail('boss did not die when hp exhausted');
@@ -308,6 +311,76 @@ try {
       if (!(gp.dmgByWeapon && Object.keys(gp.dmgByWeapon).length)) fail('per-weapon damage was not recorded');
       if (!(E.save.familyKills && Object.keys(E.save.familyKills).length)) fail('weapon mastery kills were not recorded');
       ok(`mastery + damage bookkeeping OK — ${Object.keys(E.save.familyKills || {}).length} families, ${Object.keys(gp.dmgByWeapon || {}).length} damage sources`);
+
+      // ---- v1.7: shard economy + achievements pay real bounties ----
+      E._error = null;
+      if (!(E.save.achievements || []).includes('first_departure')) fail('first_departure achievement was not granted after the scripted run');
+      else if (!(E.save.claimedAchievements || []).includes('first_departure')) fail('achievement bounty was not paid (claimedAchievements missing)');
+      else ok('achievements granted AND shard bounty paid at run end');
+      E.setScene('gameplay', { save: E.save, realmId: 'purgatory', stage: 1 });
+      G.__pump(5);
+      const gpSh = E.current;
+      const before = gpSh.gameStats.shards || 0;
+      gpSh.openChest();
+      if (gpSh.gameStats.shards !== before + 8) fail(`chest bounty wrong: ${before} -> ${gpSh.gameStats.shards} (want +8)`);
+      gpSh._spawnElite();
+      const el = gpSh.enemies.find(e => e.eliteMod);
+      if (el) { el.hp = 1; gpSh._onKill(el, {}); }
+      G.__pump(3);
+      const dropped = gpSh.pickups.filter(u => u.type === 'shard').reduce((a, u) => a + (u.amount || 1), 0);
+      if (dropped !== 12) fail(`elite bounty wrong: ${dropped} shard pickups on the ground (want 12)`);
+      if (E._error) fail('shard economy errored: ' + E._error.message);
+      ok('in-run shard payouts OK — chest +8, elite +12, exact banners');
+
+      // ---- v1.7: leaderboards degrade gracefully offline ----
+      E._error = null;
+      E.setScene('leaderboards', { save: E.save });
+      G.__pump(6);
+      if (E._error) fail('leaderboard errored: ' + E._error.message);
+      const lb = E.current;
+      if (typeof lb.boardState !== 'string') fail('leaderboard has no boardState');
+      else if (lb.boardState !== 'ready' && lb.boardState !== 'offline') fail('leaderboard boardState invalid: ' + lb.boardState);
+      G.__pump(30); // render frames: season panel toggle path
+      if (E._error) fail('leaderboard render errored: ' + E._error.message);
+      ok('leaderboard scene OK (' + lb.boardState + ')');
+
+      // ---- v1.7: run summary offers the opt-in POST strip ----
+      E._error = null;
+      E.setScene('runSummary', { save: E.save, realmId: 'purgatory', stage: 2, victory: false,
+        runStats: { kills: 40, coins: 30, bestCombo: 3, damageTaken: 2 }, time: 61, sectorDuration: 60,
+        coins: 30, level: 3, owned: {}, score: 4321, difficulty: 'normal', trainHurt: false, damageTaken: 2, cause: 'TEST' });
+      G.__pump(6);
+      if (E._error) fail('run summary errored: ' + E._error.message);
+      const rs = E.current;
+      if (typeof rs._doPost !== 'function' || !rs._postRect()) fail('opt-in POST strip missing from run summary');
+      else ok('run summary POST strip present (opt-in, never automatic)');
+
+      // ---- v1.7: identity page wears owned looks only ----
+      E._error = null;
+      E.setScene('identity', { save: E.save });
+      G.__pump(6);
+      if (E._error) fail('identity errored: ' + E._error.message);
+      const idn = E.current;
+      idn._wear('ava_top5', 'a');
+      if (E.save.avatar === 'ava_top5') fail('locked avatar was wearable');
+      idn._wear('conductor', 'a');
+      if (E.save.avatar !== 'conductor') fail('owned avatar failed to equip');
+      idn._wear('fra_aurum', 'f');
+      if (E.save.frame === 'fra_aurum') fail('locked frame was wearable');
+      if (E._error) fail('identity wear errored: ' + E._error.message);
+      ok('identity page OK — owned looks wear, locked looks refuse');
+
+      // ---- v1.7: season settle is safe offline / with no rows ----
+      E._error = null;
+      const seasonMod = await importModule('js/data/season.js');
+      if (!/^\d{4}-\d{2}$/.test(seasonMod.monthKey())) fail('monthKey is not YYYY-MM: ' + seasonMod.monthKey());
+      if (seasonMod.tierForRank(1).max !== 1) fail('tierForRank(1) is not the top tier');
+      const resNoRows = await seasonMod.settleSeason(E.save, 'p_check_norows', async () => []);
+      if (resNoRows !== null) fail('settleSeason with no board rows should return null, got ' + JSON.stringify(resNoRows));
+      const resOffline = await seasonMod.settleSeason(E.save, 'p_check_offline', async () => { throw new Error('offline'); });
+      if (resOffline !== null) fail('settleSeason offline should return null, got ' + JSON.stringify(resOffline));
+      if (E._error) fail('season settle errored: ' + E._error.message);
+      ok('season settle OK — offline / empty board degrade to null, monthKey YYYY-MM');
 
       // ---- new weapon mechanics: charge / turret / echo, through evolution ----
       E._error = null;

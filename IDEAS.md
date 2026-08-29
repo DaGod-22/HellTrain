@@ -128,3 +128,13 @@ Ground rules kept in mind throughout: one self-contained page, no gambling (ever
 38. ~~**Boss fights are open-field kiting.**~~ **FIXED v1.6.0** — bosses now rise four themed COVER pillars that eat enemy fire (position, don't kite), and every signature attack flashes a white ring + '!' tell 0.55s before landing, with a rising cue tone.
 39. ~~**No build view mid-run.**~~ **FIXED v1.6.0** — pause now has a YOUR BUILD tab: every weapon with level and evolution stars, owned cards, rerolls/banishes, kills.
 40. ~~**Gameplay has no touch controls.**~~ **FIXED v1.6.0** — full twin-thumb: left side is a virtual joystick, right side has dash and contextual Furnace rings, every menu works by tap, and there's a pause pill. Desktop mouse users get the pause pill too.
+
+
+## v1.7.0 — global leaderboards + monthly seasons + five upgrades (DONE)
+- Supabase opt-in leaderboard: run summary POST strip (signed-in players only, never automatic), boards per realm x difficulty x month, top 100, best-only upsert, own row highlighted. supabase-schema.sql must be run once in the player's Supabase project; offline degrades to local scores.
+- Monthly seasons: top 50 paid exactly (printed in Leaderboards > SEASON REWARDS), avatars top 10/5, avatars+frames top 3/2/1; settleSeason banks last month once at boot.
+- Achievements now pay fixed shard bounties (shown on every row) — they used to be dead weight.
+- Daily goals pay a streak-scaled 60+15/day (cap 180) with the streak printed; day-2+ full sweep bonus +2 shards.
+- In-run shard economy fixed: shard drops used to evaporate at run end; now banked. Elite +12, chest +8, lieutenant +40, boss +60 — every payout banner is exact. HUD shows the shard count.
+- Ultimate is manual ([Q] / touch ring) with a ready prompt; skins got per-skin plumes, spark trails, tinted furnace bursts.
+- New IDENTITY page: wear owned avatars + season frames (won, never sold).

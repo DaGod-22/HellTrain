@@ -75,6 +75,78 @@ export class SupabaseClient {
       .subscribe();
     return () => { try { this.client.removeChannel(sub); } catch {} };
   }
+
+  // ================================================================
+  // GLOBAL LEADERBOARDS (v1.7)
+  // One board per (realm, difficulty, month). One row per player per
+  // board — your BEST run. Posting is always an explicit player choice.
+  // Tables: leaderboard_entries, monthly_standings (see supabase-schema.sql)
+  // ================================================================
+  static boardPeriod(d = new Date()) {
+    return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
+  }
+  async submitRun({ playerId, name, score, stage, kills, realm, difficulty }) {
+    if (!this.connected) return { ok: false, reason: 'offline' };
+    if (typeof score !== 'number' || !isFinite(score) || score < 0) return { ok: false, reason: 'invalid' };
+    const period = SupabaseClient.boardPeriod();
+    const row = {
+      player_id: String(playerId || 'anon').slice(0, 64),
+      name: String(name || 'CONDUCTOR').slice(0, 20),
+      score: Math.floor(score),
+      stage: Math.max(1, Math.min(999, Math.floor(stage || 1))),
+      kills: Math.max(0, Math.floor(kills || 0)),
+      realm: String(realm || 'purgatory').slice(0, 32),
+      difficulty: String(difficulty || 'normal').slice(0, 16),
+      period,
+    };
+    try {
+      // best-only: read my row first; a worse run never overwrites it
+      const { data: mine } = await this.client.from('leaderboard_entries')
+        .select('score').eq('player_id', row.player_id).eq('realm', row.realm)
+        .eq('difficulty', row.difficulty).eq('period', period).maybeSingle();
+      if (mine && Number(mine.score) >= row.score) return { ok: true, kept: true, score: Number(mine.score) };
+      const { error } = await this.client.from('leaderboard_entries')
+        .upsert(row, { onConflict: 'player_id,realm,difficulty,period' });
+      if (error) return { ok: false, reason: error.message };
+      // monthly standings: best across ALL boards this month
+      const { data: mmine } = await this.client.from('monthly_standings')
+        .select('score').eq('player_id', row.player_id).eq('period', period).maybeSingle();
+      if (!mmine || Number(mmine.score) < row.score) {
+        await this.client.from('monthly_standings')
+          .upsert({ player_id: row.player_id, name: row.name, score: row.score, period },
+            { onConflict: 'player_id,period' });
+      }
+      return { ok: true, score: row.score, period };
+    } catch (e) { return { ok: false, reason: e?.message || 'network' }; }
+  }
+  // top 100 of one board, ranked
+  async topBoard(realm, difficulty, period = SupabaseClient.boardPeriod(), limit = 100) {
+    if (!this.connected) return [];
+    try {
+      const { data, error } = await this.client.from('leaderboard_entries')
+        .select('player_id,name,score,stage,kills')
+        .eq('period', period).eq('realm', realm).eq('difficulty', difficulty)
+        .order('score', { ascending: false }).limit(limit);
+      if (error) return [];
+      return data || [];
+    } catch { return []; }
+  }
+  // where does a player sit on a board? (null if not on it)
+  static rankOf(rows, playerId) {
+    const i = (rows || []).findIndex(r => r.player_id === playerId);
+    return i < 0 ? null : i + 1;
+  }
+  // month-end standings, for season rewards + hall of fame
+  async topMonthly(period, limit = 100) {
+    if (!this.connected) return [];
+    try {
+      const { data, error } = await this.client.from('monthly_standings')
+        .select('player_id,name,score').eq('period', period)
+        .order('score', { ascending: false }).limit(limit);
+      if (error) return [];
+      return data || [];
+    } catch { return []; }
+  }
 }
 
 function hashPlayer(id) {

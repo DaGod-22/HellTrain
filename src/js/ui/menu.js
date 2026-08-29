@@ -13,6 +13,8 @@ import { TRAIN_SKINS, CHAR_SKINS } from '../data/skins.js';
 import { WEAPONS } from '../data/weapons.js';
 import { TRAIN_CARRIAGE_MODULES } from '../data/carriages.js';
 import { familyName, masteryLabel, nextMilestone } from '../data/mastery.js';
+import { SEASON_TIERS, tierForRank, monthKey, monthLabel, AVATARS, FRAMES } from '../data/season.js';
+import { drawAvatar, drawFrame } from './kit.js';
 import { saveSave, spendCoins } from '../core/save.js';
 import { AUTH } from '../systems/auth.js';
 import { SOUNDS } from '../core/sound.js';
@@ -127,7 +129,8 @@ export class MenuScene extends Page {
       { icon: 'relic', color: '#ffe066', name: 'Relics', desc: 'Equip one relic for every run', scene: 'relics', right: relics ? `${relics} OWNED` : 'NONE YET' },
       { icon: 'trophy', color: '#ffd24a', name: 'Achievements', desc: 'Career milestones', scene: 'achievements', right: `${done}/${ACHIEVEMENTS.length}` },
       { icon: 'train', color: '#8ef0ff', name: 'Train Base', desc: 'Carriage loadout, skins, records', scene: 'trainBase' },
-      { icon: 'star', color: '#c07aff', name: 'Leaderboard', desc: 'Best runs on this station', scene: 'leaderboards' },
+      { icon: 'star', color: '#ffd24a', name: 'Leaderboards', desc: 'Global boards + season rewards', scene: 'leaderboards' },
+      { icon: 'book', color: '#cfd4e0', name: 'Identity', desc: 'Avatars and season frames', scene: 'identity' },
       { icon: 'book', color: '#9aa0b4', name: 'Profile', desc: 'Account and lifetime stats', scene: 'profile' },
       { icon: 'cog', color: '#9aa0b4', name: 'Settings', desc: 'Sound and screen effects', scene: 'settings' },
     ];
@@ -643,6 +646,7 @@ export class DailyRewardsScene extends Page {
       if (this.hit({ x: KW / 2 - 70, y: 306, w: 140, h: 30 })) {
         const res = AUTH.claimDaily();
         if (res.ok) {
+          this.save.dailyStreak = res.streak || ((this.save.dailyStreak || 0) + 1);
           this.save.coins = (this.save.coins || 0) + res.reward.coins;
           this.save.shards = (this.save.shards || 0) + res.reward.gems;
           if (res.reward.chest) {
@@ -756,7 +760,9 @@ export class AchievementsScene extends Page {
       itemCard(ctx, {
         ...this.list.rowRect(i), icon: got ? 'trophy' : 'lock', iconColor: got ? K.GOLD : K.FAINT,
         name: ach.name, desc: ach.desc,
-        right: got ? 'DONE' : 'LOCKED', owned: got, locked: !got,
+        right: got ? 'PAID ' + (ach.reward || 0) + '\u25c6' : 'PAYS ' + (ach.reward || 0) + '\u25c6',
+        rightColor: got ? K.GOLD : '#8ef0ff',
+        owned: got, locked: !got,
         hover: this.list.hoverIndex === i, selected: this.list.keyIndex === i,
         appear: this.list.appearOf(i, this.pageT),
       });
@@ -772,43 +778,134 @@ export class AchievementsScene extends Page {
 export class LeaderboardScene extends Page {
   enter(p) {
     super.enter(p);
-    this.scores = []; this.loading = true;
-    this.engine.supabase?.topScores?.(10).then((s) => { this.scores = s || []; this.loading = false; }).catch(() => { this.loading = false; });
+    this.realmIdx = Math.max(0, REALMS.findIndex(r => r.id === (this.save.lastRealm || 'purgatory')));
+    this.diffIdx = Math.max(0, DIFFICULTIES.findIndex(d => d.id === (this.engine._difficulty || 'normal')));
+    this.period = monthKey();
+    this.rows = [];
+    this.boardState = 'loading';
+    this.seasonOpen = false;
+    this.seasonRows = [];
+    this.list = new List({ rowH: 26, top: 196, bottom: KH - 46 });
+    this.list.max = 100;
+    this._fetch();
+    this._fetchSeason();
   }
+  get _boardKey() { return [REALMS[this.realmIdx].id, DIFFICULTIES[this.diffIdx].id, this.period].join('|'); }
+  _fetch() {
+    this.boardState = 'loading'; this.rows = [];
+    const sb = this.engine.supabase;
+    if (!sb?.isAvailable?.()) { this.boardState = 'offline'; return; }
+    sb.topBoard(REALMS[this.realmIdx].id, DIFFICULTIES[this.diffIdx].id, this.period, 100)
+      .then((rows) => { this.rows = rows || []; this.boardState = 'ready'; })
+      .catch(() => { this.boardState = 'offline'; });
+  }
+  _fetchSeason() {
+    const sb = this.engine.supabase;
+    if (!sb?.isAvailable?.()) return;
+    sb.topMonthly(monthKey(), 3).then((r) => { this.seasonRows = r || []; }).catch(() => {});
+  }
+  _cycleRealm(d) {
+    this.realmIdx = (this.realmIdx + d + REALMS.length) % REALMS.length;
+    this._fetch();
+  }
+  _setDiff(i) { this.diffIdx = i; this._fetch(); }
   update(dt) {
     const m = super.base(dt);
     if (!m) return;
+    this.feedList(this.list, m);
+    if (!this.grace(dt) && m.justDown) {
+      // difficulty pills (2 rows of 3)
+      const dw = Math.floor((KW - 16 - 2 * 3) / 3);
+      for (let i = 0; i < DIFFICULTIES.length; i++) {
+        const x = 8 + (i % 3) * (dw + 3), y = 62 + Math.floor(i / 3) * 22;
+        if (this.hit({ x, y, w: dw, h: 18 })) { this._setDiff(i); m.justDown = false; return; }
+      }
+      // realm arrows
+      if (this.hit({ x: 8, y: 110, w: 26, h: 20 })) { this._cycleRealm(-1); m.justDown = false; return; }
+      if (this.hit({ x: KW - 34, y: 110, w: 26, h: 20 })) { this._cycleRealm(1); m.justDown = false; return; }
+      // season toggle
+      if (this.hit({ x: 8, y: 138, w: KW - 16, h: 20 })) { this.seasonOpen = !this.seasonOpen; m.justDown = false; return; }
+      // hall-of-fame tap re-fetches nothing; keep
+    }
     if (!m.down) this._press = null;
     m.justDown = false;
   }
   render(ctx) {
     lavaBackground(ctx, this.t, this.embers);
-    topBar(ctx, { title: 'LEADERBOARD', save: this.save, hover: null });
-    const locals = (this.save.localScores || []).slice(0, 6);
-    sectionLabel(ctx, 'YOUR BEST RUNS — THIS DEVICE', 56);
-    if (!locals.length) label(ctx, 'No runs recorded yet — take the train out.', KW / 2, 90, K.DIM, 6);
+    topBar(ctx, { title: 'LEADERBOARDS', save: this.save, hover: null });
+    const diff = DIFFICULTIES[this.diffIdx];
+    // ---- local strip ----
+    const locals = (this.save.localScores || []).slice(0, 3);
+    label(ctx, 'THIS DEVICE', 10, 54, K.DIM, 6, 'left');
     locals.forEach((r, i) => {
-      const y = 66 + i * 26;
-      tile(ctx, 8, y, KW - 16, 22, 7, { fill: i === 0 ? '#3a2a1a' : K.PANEL, fillLo: K.PANEL_LO, outline: i === 0 ? K.GOLD : K.INK, lift: 1 });
-      label(ctx, (i + 1) + '. ' + fmtNum(r.score || 0) + ' PTS', 14, y + 15, i === 0 ? K.GOLD : K.TXT, 7, 'left');
-      label(ctx, `${(r.realm || '').toUpperCase().slice(0, 9)} · ST${r.stage} · ${r.kills || 0} KOs`, KW - 14, y + 15, K.BLUE, 6, 'right');
+      const x = 96 + i * 58;
+      label(ctx, fmtNum(r.score || 0), x, 54, K.GOLD, 6, 'left');
+      label(ctx, (r.realm || '').slice(0, 6).toUpperCase() + ' ST' + r.stage, x, 61, K.DIM, 5, 'left');
     });
-    sectionLabel(ctx, 'THE WIDER LINE — ONLINE', 288);
-    if (this.loading) label(ctx, 'Reaching the network…', KW / 2, 310, K.DIM, 7);
-    else if (!this.scores.length) label(ctx, 'Offline — showing local runs only.', KW / 2, 310, K.DIM, 6);
-    (this.scores || []).slice(0, 6).forEach((s, i) => {
-      const y = 300 + i * 26;
-      tile(ctx, 8, y, KW - 16, 22, 7, { fill: K.PANEL, fillLo: K.PANEL_LO, outline: K.INK, lift: 1 });
-      label(ctx, (i + 1) + '. ' + String(s.player_id || 'ANON').slice(0, 12), 14, y + 15, K.TXT, 7, 'left');
-      label(ctx, fmtNum(s.score || 0), KW - 14, y + 15, K.GOLD, 7, 'right');
+    // ---- difficulty pills ----
+    const dw = Math.floor((KW - 16 - 2 * 3) / 3);
+    DIFFICULTIES.forEach((d, i) => {
+      const x = 8 + (i % 3) * (dw + 3), y = 62 + Math.floor(i / 3) * 22;
+      const active = i === this.diffIdx;
+      tile(ctx, x, y, dw, 18, 6, { fill: active ? K.PANEL_ACT : '#241a2e', fillLo: K.PANEL_LO, ring: active ? K.GOLD : null, ringW: active ? 2 : 0, lift: active ? 2 : 0 });
+      label(ctx, d.name.toUpperCase(), x + dw / 2, y + 12, active ? K.GOLD : K.SUB, 6);
     });
+    // ---- realm selector ----
+    tile(ctx, 8, 110, KW - 16, 20, 6, { fill: '#241a2e', fillLo: K.PANEL_LO, outline: K.INK });
+    label(ctx, '<', 21, 124, K.SUB, 8);
+    label(ctx, '>', KW - 21, 124, K.SUB, 8);
+    label(ctx, REALMS[this.realmIdx].name.toUpperCase(), KW / 2, 124, REALMS[this.realmIdx].accent, 7);
+    label(ctx, 'GLOBAL · ' + monthLabel(this.period) + ' · resets monthly', KW / 2, 138 + 0, K.SUB, 6);
+    // ---- season strip ----
+    const seasonY = 148;
+    tile(ctx, 8, seasonY, KW - 16, 20, 6, { fill: '#241a2e', fillLo: K.PANEL_LO, outline: K.INK, ring: this.seasonOpen ? K.GOLD : null, ringW: this.seasonOpen ? 1 : 0 });
+    label(ctx, this.seasonOpen ? 'SEASON REWARDS ▲' : 'SEASON REWARDS ▼ — exact payouts, top 50 paid', KW / 2, seasonY + 13, K.GOLD, 6);
+    if (this.seasonOpen) {
+      const sy = seasonY + 24;
+      tile(ctx, 8, sy, KW - 16, 104, 8, { fill: '#1c1428', fillLo: '#120c1c', outline: K.GOLD, ringW: 1 });
+      SEASON_TIERS.forEach((t, i) => {
+        const y = sy + 12 + i * 13;
+        const range = i === 0 ? '#1' : i <= 2 ? '#' + (SEASON_TIERS[i - 1].max + 1) + '-' + t.max : (SEASON_TIERS[i - 1].max + 1) + '-' + t.max;
+        label(ctx, range, 16, y, K.SUB, 6, 'left');
+        label(ctx, t.name, 44, y, t.max <= 3 ? K.GOLD : t.max <= 10 ? '#8ef0ff' : '#c07aff', 6, 'left');
+        label(ctx, t.avatar ? 'avatar' + (t.frame ? '+frame' : '') + ' · ' : '', 150, y, K.TXT, 5, 'left');
+        label(ctx, t.shards + '◆ ' + t.coins + '©', KW - 16, y, '#ffe878', 6, 'right');
+      });
+      if (this.seasonRows.length) {
+        label(ctx, 'LAST MONTH\'S PODIUM: ' + this.seasonRows.map((r, i) => '#' + (i + 1) + ' ' + String(r.name).slice(0, 8)).join('  '), KW / 2, sy + 96, K.DIM, 5);
+      }
+      this.list = this.list || new List({ rowH: 26, top: 296, bottom: KH - 46 });
+      this.list.top = 296;
+    } else {
+      this.list && (this.list.top = 196);
+    }
+    // ---- board ----
+    sectionLabel(ctx, REALMS[this.realmIdx].name.toUpperCase() + ' · ' + diff.name.toUpperCase(), this.list.top - 14);
+    const [a, b] = this.list.visibleRange();
+    if (this.boardState === 'loading') label(ctx, 'Reaching the network…', KW / 2, this.list.top + 30, K.DIM, 7);
+    else if (this.boardState === 'offline') label(ctx, 'OFFLINE — the global board needs the network. Local runs still record.', KW / 2, this.list.top + 30, K.DIM, 6);
+    else if (!this.rows.length) label(ctx, 'No conductors here yet this month. Be the first.', KW / 2, this.list.top + 30, K.DIM, 6);
+    for (let i = a; i <= Math.min(b, this.rows.length - 1); i++) {
+      const r = this.rows[i];
+      const rr = this.list.rowRect(i);
+      const mine = r.player_id === this.save.playerId;
+      const medal = i === 0 ? '#ffd24a' : i === 1 ? '#d8dce8' : i === 2 ? '#ff9033' : K.SUB;
+      itemCard(ctx, {
+        ...rr, h: 24, icon: mine ? 'star' : 'ghost', iconColor: medal,
+        name: (i + 1) + '. ' + String(r.name || 'CONDUCTOR').slice(0, 18),
+        desc: 'ST' + (r.stage || 1) + ' · ' + (r.kills || 0) + ' KOs',
+        right: fmtNum(r.score || 0), rightColor: mine ? K.GOLD : K.TXT,
+        selected: mine, appear: 1,
+      });
+    }
+    this.list.drawScrollbar(ctx);
+    // my standing on this board
+    const myRank = (this.save.myBoards || {})[this._boardKey];
+    if (myRank) label(ctx, 'YOU: #' + (myRank > 100 ? '100+' : myRank) + ' on this board', KW / 2, KH - 24, K.GOLD, 7);
     drawToast(ctx, this.toast);
   }
 }
 
-// ====================================================================
-// DAILY RUN
-// ====================================================================
 export class DailyRunScene extends Page {
   enter(p) {
     super.enter(p);
@@ -953,7 +1050,44 @@ export class SettingsScene extends Page {
 // RUN SUMMARY — results + per-weapon damage breakdown
 // ====================================================================
 export class RunSummaryScene extends Page {
-  enter(p) { super.enter(p); this.params = p; this.anim = 0; }
+  enter(p) { super.enter(p); this.params = p; this.anim = 0; this.post = null; }
+  _postRect() { return { x: 12, y: 402, w: KW - 24, h: 28 }; }
+  _postLabel() {
+    const st = this.post?.state || 'idle';
+    if (st === 'posting') return 'POSTING…';
+    if (st === 'done') return this.post.rank ? ('POSTED — RANK #' + this.post.rank + ' THIS MONTH') : 'POSTED — TOP 100+ THIS MONTH';
+    if (st === 'kept') return 'YOUR BEST STANDS — RANK #' + (this.post.rank || '?') + ' THIS MONTH';
+    if (st === 'error') return 'COULD NOT POST — TAP TO RETRY';
+    const u = AUTH.getCurrentUser();
+    return 'POST SCORE TO THE GLOBAL BOARD' + (u ? '  ·  as ' + String(u.username).slice(0, 12).toUpperCase() : '');
+  }
+  _doPost() {
+    const p = this.params || {};
+    if (this.post && ['posting', 'done', 'kept'].includes(this.post.state)) return;
+    const u = AUTH.getCurrentUser();
+    if (!u) { this.say('SIGN IN AT THE PROFILE DESK TO POST', K.BAD); return; }
+    this.post = { state: 'posting' };
+    const sb = this.engine.supabase;
+    const entry = {
+      playerId: this.save.playerId, name: u.username || 'CONDUCTOR',
+      score: p.score || 0, stage: p.stage || 1, kills: p.runStats?.kills || 0,
+      realm: p.realmId || 'purgatory', difficulty: p.difficulty || 'normal',
+    };
+    const finish = (res) => {
+      if (!res?.ok) { this.post = { state: 'error', reason: res?.reason || 'offline' }; return; }
+      const key = [entry.realm, entry.difficulty, monthKey()].join('|');
+      // rank = where my score sits on this month's board
+      sb.topBoard(entry.realm, entry.difficulty).then((rows) => {
+        const rank = rows.length ? rows.findIndex(r => r.player_id === this.save.playerId) + 1 : null;
+        this.save.myBoards = this.save.myBoards || {};
+        this.save.myBoards[key] = rank || 999;
+        saveSave(this.save);
+        this.post = { state: res.kept ? 'kept' : 'done', rank: rank || null };
+      }).catch(() => { this.post = { state: 'done', rank: null }; });
+    };
+    if (!sb?.isAvailable?.()) { this.post = { state: 'error', reason: 'offline' }; return; }
+    sb.submitRun(entry).then(finish).catch((e) => { this.post = { state: 'error', reason: e?.message }; });
+  }
   _buttons() {
     const y = KH - 44, w = 76, gap = 8;
     const total = 3 * w + 2 * gap;
@@ -970,6 +1104,7 @@ export class RunSummaryScene extends Page {
     this.anim = Math.min(1, this.anim + dt * 1.6);
     if (!this.grace(dt) && m.justDown) {
       const p = this.params || {};
+      if (this.hit(this._postRect())) { this._doPost(); m.justDown = false; return; }
       for (const b of this._buttons()) {
         if (this.hit(b)) {
           if (b.act === 'retry') this.engine.setScene('gameplay', { save: this.save, realmId: p.realmId || this.save.lastRealm || 'purgatory', stage: p.stage || 1, difficulty: p.difficulty || this.engine._difficulty || 'normal' });
@@ -1053,6 +1188,16 @@ export class RunSummaryScene extends Page {
       label(ctx, 'DEFEATED BY: ' + String(p.cause).toUpperCase(), KW / 2, 338, '#ff7a6a', 7);
     }
     label(ctx, 'PURSE  ' + fmtNum(this.save.coins || 0) + ' COINS · ' + fmtNum(this.save.shards || 0) + ' SHARDS', KW / 2, 366, K.GOLD, 8);
+    // ---- opt-in global post — nothing leaves without your say-so ----
+    {
+      const r = this._postRect();
+      const st = this.post?.state || 'idle';
+      const col = st === 'done' || st === 'kept' ? K.OK : st === 'error' ? K.BAD : K.GOLD;
+      tile(ctx, r.x, r.y, r.w, r.h, 8, { fill: 'rgba(10,8,18,0.92)', fillLo: 'rgba(6,4,12,0.95)', outline: col, ring: col, ringW: 1, lift: 2 });
+      label(ctx, 'SCORE ' + fmtNum(this.params?.score || 0) + ' · ' + (this.params?.realmId || 'purgatory').toUpperCase() + ' / ' + (this.params?.difficulty || 'normal').toUpperCase(), r.x + 10, r.y + 11, K.SUB, 6, 'left');
+      label(ctx, 'posting is your choice — nothing is sent automatically', r.x + 10, r.y + 21, K.DIM, 5, 'left');
+      label(ctx, this._postLabel(), r.x + r.w - 10, r.y + 17, col, 7, 'right');
+    }
     for (const b of this._buttons()) {
       const hov = this.hit(b);
       button(ctx, b, b.label, { color: b.color, hover: hov, size: 8 });
@@ -1196,8 +1341,8 @@ export class ProfileScene extends Page {
     if (!m) return;
     if (!this.grace(dt) && m.justDown) {
       const cur = AUTH.getCurrentUser();
-      const tabs = ['ACCOUNT', 'RECORD'];
-      for (let i = 0; i < 2; i++) { const r = { x: 8 + i * 127, y: 40, w: 127, h: 24 }; if (this.hit(r)) { this.tab = i; m.justDown = false; return; } }
+      const tabs = ['ACCOUNT', 'RECORD', 'IDENTITY'];
+      for (let i = 0; i < 3; i++) { const r = { x: 8 + i * 127, y: 40, w: 127, h: 24 }; if (this.hit(r)) { this.tab = i; m.justDown = false; return; } }
       if (this.tab === 0) {
         if (this.mode === 'main') {
           const rows = [];
@@ -1216,6 +1361,24 @@ export class ProfileScene extends Page {
             if (this.hit({ x: 8, y: ly, w: KW - 16, h: 30 })) { AUTH.logout(); this.success = 'Signed out'; this.error = ''; m.justDown = false; return; }
             if (cur.guest && this.hit({ x: 8, y: ly + 38, w: KW - 16, h: 30 })) { this.mode = 'guestUpgrade'; this.username = ''; this.password = ''; m.justDown = false; return; }
           }
+        } else if (this.tab === 2) {
+          // IDENTITY — owned avatars + season frames, tap to wear
+          const ownedA = this.save.ownedAvatars || ['conductor'];
+          const idsA = Object.keys(AVATARS);
+          idsA.forEach((id, i) => {
+            const x = 8 + i * 64;
+            if ((this.save.ownedAvatars || []).includes(id) && this.hit({ x, y: 118, w: 60, h: 60 })) {
+              this.save.avatar = id; saveSave(this.save); try { SOUNDS.pickup(); } catch {} m.justDown = false; return;
+            }
+          });
+          const idsF = ['none', ...Object.keys(FRAMES)];
+          idsF.forEach((id, i) => {
+            const x = 8 + i * 96;
+            const owned = id === 'none' || (this.save.ownedFrames || []).includes(id);
+            if (owned && this.hit({ x, y: 238, w: 92, h: 34 })) {
+              this.save.frame = id === 'none' ? null : id; saveSave(this.save); try { SOUNDS.pickup(); } catch {} m.justDown = false; return;
+            }
+          });
         } else {
           if (this.hit({ x: 8, y: 74, w: KW - 16, h: 32 })) this.focus = 'username';
           if (this.hit({ x: 8, y: 114, w: KW - 16, h: 32 })) this.focus = 'password';
@@ -1232,14 +1395,47 @@ export class ProfileScene extends Page {
     lavaBackground(ctx, this.t, this.embers);
     topBar(ctx, { title: 'PROFILE', save: this.save, hover: null });
     const cur = AUTH.getCurrentUser();
-    const tabs = ['ACCOUNT', 'RECORD'];
+    const tabs = ['ACCOUNT', 'RECORD', 'IDENTITY'];
     tabs.forEach((lb, i) => {
       const r = { x: 8 + i * 127, y: 40, w: 127, h: 24 };
       const active = this.tab === i;
       tile(ctx, r.x, r.y, r.w, r.h, 8, { fill: active ? K.PANEL_ACT : '#241a2e', fillLo: K.PANEL_LO, outline: K.INK, ring: active ? K.GOLD : null, ringW: 2, lift: active ? 3 : 1 });
       label(ctx, lb, r.x + r.w / 2, r.y + 16, active ? K.GOLD : K.SUB, 7);
     });
-    if (this.tab === 1) {
+    if (this.tab === 2) {
+      // IDENTITY — preview + owned lockers. Everything shown is owned; nothing for sale here.
+      const ownedA = this.save.ownedAvatars || ['conductor'];
+      const curA = AVATARS[this.save.avatar] ? this.save.avatar : 'conductor';
+      tile(ctx, 8, 72, KW - 16, 40, 8, { fill: '#1c1428', fillLo: '#120c1c', outline: K.INK, lift: 2 });
+      drawFrame(ctx, KW / 2, 92, 17, this.save.frame || null);
+      drawAvatar(ctx, KW / 2, 92, 13, curA);
+      label(ctx, AVATARS[curA].name.toUpperCase(), 70, 86, K.GOLD, 7, 'left');
+      label(ctx, AVATARS[curA].desc.slice(0, 40), 70, 98, K.DIM, 5, 'left');
+      label(ctx, 'AVATARS — TAP TO WEAR (' + ownedA.length + '/' + Object.keys(AVATARS).length + ')', 10, 128, K.SUB, 6, 'left');
+      Object.keys(AVATARS).forEach((id, i) => {
+        const x = 8 + i * 64, y = 134;
+        const owned = ownedA.includes(id);
+        tile(ctx, x, y, 60, 60, 8, { fill: owned ? K.PANEL : '#181220', fillLo: K.PANEL_LO, outline: K.INK, ring: this.save.avatar === id ? K.GOLD : null, ringW: this.save.avatar === id ? 2 : 0, lift: owned ? 2 : 0 });
+        ctx.globalAlpha = owned ? 1 : 0.25;
+        drawAvatar(ctx, x + 30, y + 24, 12, id);
+        ctx.globalAlpha = 1;
+        label(ctx, owned ? '' : 'LOCKED', x + 30, y + 50, K.DIM, 5);
+      });
+      label(ctx, 'SEASON FRAMES — WON, NEVER SOLD', 10, 212, K.SUB, 6, 'left');
+      const idsF = ['none', ...Object.keys(FRAMES)];
+      idsF.forEach((id, i) => {
+        const x = 8 + i * 96, y = 220;
+        const owned = id === 'none' || (this.save.ownedFrames || []).includes(id);
+        const active = id === 'none' ? !this.save.frame : this.save.frame === id;
+        tile(ctx, x, y, 92, 34, 8, { fill: owned ? K.PANEL : '#181220', fillLo: K.PANEL_LO, outline: K.INK, ring: active ? K.GOLD : null, ringW: active ? 2 : 0, lift: owned ? 2 : 0 });
+        ctx.globalAlpha = owned ? 1 : 0.25;
+        if (id === 'none') label(ctx, 'NO FRAME', x + 46, y + 20, K.SUB, 6);
+        else { drawFrame(ctx, x + 18, y + 17, 12, id); label(ctx, FRAMES[id].name.split(' ')[0].toUpperCase(), x + 56, y + 20, K.SUB, 5); }
+        ctx.globalAlpha = 1;
+        if (!owned) label(ctx, 'TOP ' + (id === 'fra_aurum' ? '1' : id === 'fra_argent' ? '2' : '3') + ' ONLY', x + 46, y + 30, K.DIM, 4);
+      });
+      label(ctx, 'Finish a season high enough and the look is yours forever.', KW / 2, 272, K.DIM, 5);
+    } else if (this.tab === 1) {
       const s = this.save.stats || {};
       const rows = [
         ['RUNS', String(s.totalRuns || 0)],
@@ -1304,6 +1500,77 @@ export class ProfileScene extends Page {
       if (this.success) label(ctx, this.success, KW / 2, KH - 26, K.OK, 7);
       if (this.error) label(ctx, this.error, KW / 2, KH - 26, K.BAD, 7);
     }
+    drawToast(ctx, this.toast);
+  }
+}
+
+// ====================================================================
+// IDENTITY — avatars + season frames (won, never sold)
+// ====================================================================
+export class IdentityScene extends Page {
+  enter(p) { super.enter(p); this.msg = 'Everything here is earned. Seasons pay looks, not luck.'; }
+  _wear(id, kind) {
+    const s = this.save;
+    if (kind === 'a') {
+      if (!(s.ownedAvatars || []).includes(id)) return this.say('FINISH A SEASON HIGH ENOUGH TO EARN THIS', K.BAD);
+      s.avatar = id;
+    } else {
+      if (id !== 'none' && !(s.ownedFrames || []).includes(id)) return this.say('TOP 3 OF A SEASON ONLY — NO SHORTCUTS', K.BAD);
+      s.frame = id === 'none' ? null : id;
+    }
+    saveSave(s);
+    try { SOUNDS.pickup(); } catch {}
+    this.msg = kind === 'a' ? ('WEARING ' + String(AVATARS[id].name).toUpperCase()) : (id === 'none' ? 'FRAME REMOVED' : 'WEARING ' + String(FRAMES[id].name).toUpperCase());
+  }
+  update(dt) {
+    const m = super.base(dt);
+    if (!m) return;
+    if (!this.grace(dt) && m.justDown) {
+      Object.keys(AVATARS).forEach((id, i) => { if (this.hit({ x: 8 + i * 64, y: 128, w: 60, h: 60 })) { this._wear(id, 'a'); m.justDown = false; } });
+      ['none', ...Object.keys(FRAMES)].forEach((id, i) => { if (this.hit({ x: 8 + i * 96, y: 252, w: 92, h: 34 })) { this._wear(id, 'f'); m.justDown = false; } });
+    }
+    if (!m.down) this._press = null;
+    m.justDown = false;
+  }
+  render(ctx) {
+    lavaBackground(ctx, this.t, this.embers);
+    topBar(ctx, { title: 'IDENTITY', save: this.save, hover: null });
+    const s = this.save;
+    const curA = AVATARS[s.avatar] ? s.avatar : 'conductor';
+    // preview
+    tile(ctx, 8, 44, KW - 16, 72, 10, { fill: '#1c1428', fillLo: '#120c1c', outline: K.GOLD, ringW: 1, lift: 2 });
+    drawFrame(ctx, KW / 2, 80, 26, s.frame || null);
+    drawAvatar(ctx, KW / 2, 80, 20, curA);
+    label(ctx, AVATARS[curA].name.toUpperCase(), 96, 66, K.GOLD, 8, 'left');
+    label(ctx, AVATARS[curA].desc.slice(0, 44), 96, 78, K.DIM, 5, 'left');
+    label(ctx, s.frame ? 'FRAME: ' + FRAMES[s.frame].name.toUpperCase() : 'NO FRAME', 96, 90, K.SUB, 6, 'left');
+    // avatars
+    label(ctx, 'AVATARS — TAP TO WEAR · ' + (s.ownedAvatars || ['conductor']).length + '/' + Object.keys(AVATARS).length + ' OWNED', 10, 126, K.SUB, 6, 'left');
+    Object.keys(AVATARS).forEach((id, i) => {
+      const x = 8 + i * 64, y = 132;
+      const owned = (s.ownedAvatars || []).includes(id);
+      const active = s.avatar === id;
+      tile(ctx, x, y, 60, 60, 8, { fill: owned ? K.PANEL : '#181220', fillLo: K.PANEL_LO, outline: K.INK, ring: active ? K.GOLD : null, ringW: active ? 2 : 0, lift: owned ? 2 : 0 });
+      ctx.globalAlpha = owned ? 1 : 0.22;
+      drawAvatar(ctx, x + 30, y + 26, 13, id);
+      ctx.globalAlpha = 1;
+      label(ctx, owned ? (active ? 'WORN' : '') : 'EARN IT', x + 30, y + 52, active ? K.GOLD : K.DIM, 5);
+    });
+    // frames
+    label(ctx, 'SEASON FRAMES — TOP 3 OF A MONTH, FOREVER', 10, 210, K.SUB, 6, 'left');
+    ['none', ...Object.keys(FRAMES)].forEach((id, i) => {
+      const x = 8 + i * 96, y = 218;
+      const owned = id === 'none' || (s.ownedFrames || []).includes(id);
+      const active = id === 'none' ? !s.frame : s.frame === id;
+      tile(ctx, x, y, 92, 34, 8, { fill: owned ? K.PANEL : '#181220', fillLo: K.PANEL_LO, outline: K.INK, ring: active ? K.GOLD : null, ringW: active ? 2 : 0, lift: owned ? 2 : 0 });
+      ctx.globalAlpha = owned ? 1 : 0.22;
+      if (id === 'none') label(ctx, 'NO FRAME', x + 46, y + 20, K.SUB, 6);
+      else { drawFrame(ctx, x + 18, y + 17, 12, id); label(ctx, FRAMES[id].name.split(' ')[0].toUpperCase(), x + 58, y + 20, K.SUB, 5); }
+      ctx.globalAlpha = 1;
+      if (!owned) label(ctx, id === 'fra_aurum' ? '#1 ONLY' : id === 'fra_argent' ? '#2 ONLY' : '#3 ONLY', x + 46, y + 30, K.DIM, 4);
+    });
+    label(ctx, this.msg, KW / 2, 272, K.SUB, 6);
+    label(ctx, 'Season rewards are exact and printed in advance — the board decides, not chance.', KW / 2, 284, K.DIM, 5);
     drawToast(ctx, this.toast);
   }
 }

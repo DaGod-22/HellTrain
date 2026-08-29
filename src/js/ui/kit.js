@@ -593,3 +593,76 @@ export function sectionLabel(ctx, txt, y) {
   ctx.strokeStyle = 'rgba(255,255,255,0.12)';
   ctx.beginPath(); ctx.moveTo(10, y + 5); ctx.lineTo(KW - 10, y + 5); ctx.stroke();
 }
+
+// ============================================================
+// SEASON AVATARS + FRAMES — profile pictures earned by ranking
+// at the end of a monthly season. Drawn, not rolled.
+// ============================================================
+export function drawAvatar(ctx, cx, cy, r, avatarId) {
+  // conductor bust: cap + face + shoulders, tinted per avatar
+  const tint = { ava_aurum: '#ffd24a', ava_argent: '#d8dce8', ava_ember: '#ff9033',
+    ava_top5: '#8ef0ff', ava_top10: '#c07aff' }[avatarId] || '#cfd4e0';
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.clip();
+  ctx.fillStyle = '#1a1226';
+  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+  // shoulders
+  ctx.fillStyle = tint;
+  ctx.globalAlpha = 0.85;
+  ctx.fillRect(cx - r, cy + r * 0.45, r * 2, r);
+  ctx.globalAlpha = 1;
+  // head
+  ctx.fillStyle = '#e8c8a8';
+  ctx.beginPath(); ctx.arc(cx, cy - r * 0.05, r * 0.52, 0, TAU); ctx.fill();
+  // cap with brim
+  ctx.fillStyle = tint;
+  ctx.beginPath(); ctx.arc(cx, cy - r * 0.28, r * 0.54, Math.PI, 0); ctx.closePath(); ctx.fill();
+  ctx.fillRect(cx - r * 0.62, cy - r * 0.3, r * 1.24, r * 0.14);
+  // calm eyes
+  ctx.fillStyle = '#1a1026';
+  ctx.fillRect(cx - r * 0.26, cy - r * 0.02, r * 0.14, r * 0.14);
+  ctx.fillRect(cx + r * 0.12, cy - r * 0.02, r * 0.14, r * 0.14);
+  ctx.restore();
+  // rim
+  ctx.strokeStyle = tint;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.stroke();
+}
+
+export function drawFrame(ctx, cx, cy, r, frameId) {
+  if (!frameId) return;
+  const spec = {
+    fra_aurum:  { c: '#ffd24a', corners: 'star' },
+    fra_argent: { c: '#d8dce8', corners: 'diamond' },
+    fra_ember:  { c: '#ff9033', corners: 'flame' },
+  }[frameId];
+  if (!spec) return;
+  ctx.strokeStyle = spec.c;
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(cx, cy, r + 3, 0, TAU); ctx.stroke();
+  // corner marks at the four diagonals
+  for (let i = 0; i < 4; i++) {
+    const a = Math.PI / 4 + i * Math.PI / 2;
+    const px = cx + Math.cos(a) * (r + 3), py = cy + Math.sin(a) * (r + 3);
+    ctx.fillStyle = spec.c;
+    if (spec.corners === 'star') {
+      ctx.beginPath();
+      for (let j = 0; j < 10; j++) {
+        const aa = j / 10 * TAU - Math.PI / 2;
+        const rr = j % 2 ? 1.6 : 3.6;
+        const fx = px + Math.cos(aa) * rr, fy = py + Math.sin(aa) * rr;
+        j ? ctx.lineTo(fx, fy) : ctx.moveTo(fx, fy);
+      }
+      ctx.closePath(); ctx.fill();
+    } else if (spec.corners === 'diamond') {
+      ctx.beginPath();
+      ctx.moveTo(px, py - 3.6); ctx.lineTo(px + 3.6, py); ctx.lineTo(px, py + 3.6); ctx.lineTo(px - 3.6, py);
+      ctx.closePath(); ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(px, py - 3.4); ctx.quadraticCurveTo(px + 3.4, py, px, py + 3.4);
+      ctx.quadraticCurveTo(px - 3.4, py, px, py - 3.4);
+      ctx.fill();
+    }
+  }
+}

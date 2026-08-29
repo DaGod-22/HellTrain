@@ -10,7 +10,7 @@ import { TAU, fmtNum, fmtTime } from '../core/utils.js';
 import { REALMS } from '../data/realms.js';
 import { TRAIN_CARRIAGE_MODULES } from '../data/carriages.js';
 import { RELICS } from '../data/realms.js';
-import { todayGoals, GOAL_REWARD, goalProgressLabel } from '../data/goals.js';
+import { todayGoals, goalReward, goalProgressLabel } from '../data/goals.js';
 import { saveSave } from '../core/save.js';
 import { AUTH } from '../systems/auth.js';
 import { ICONS } from '../data/icons.js';
@@ -160,6 +160,7 @@ export class HomeScene {
       else if (inRect(m, L.more)) go('hub');
       else if (inRect(m, L.chest)) this._openChest();
       else if (inRect(m, L.coins) || inRect(m, L.shards)) go('shop');
+      else if (this.save._seasonNotice && m.y < 52) { this.save._seasonNotice = null; saveSave(this.save); }
       else if (inRect(m, L.profile)) go('profile');
       else {
         const tileHit = L.tiles.find((t) => inRect(m, t));
@@ -217,9 +218,16 @@ export class HomeScene {
     if (this._goalClaimed(i)) return this._say('ALREADY CLAIMED TODAY', '#9aa0b4');
     if (!this._goalDone(g)) return this._say(goalProgressLabel(s.dailyGoals.p[g.key] || 0, g), '#9aa0b4');
     s.dailyGoals.claimed = [...(s.dailyGoals.claimed || []), i];
-    this.save.coins = (this.save.coins || 0) + GOAL_REWARD;
+    const pay = goalReward(s);
+    this.save.coins = (this.save.coins || 0) + pay;
+    let msg = '+' + pay + ' COINS';
+    // finish BOTH goals on one day: a fixed +2 shard bonus, printed up top
+    if (s.dailyGoals.claimed.length >= 2) {
+      this.save.shards = (this.save.shards || 0) + 2;
+      msg += ' +2 SHARDS — FULL SWEEP';
+    }
     saveSave(this.save);
-    this._say('+' + GOAL_REWARD + ' COINS — SEE YOU TOMORROW', K.OK);
+    this._say(msg + ' — SEE YOU TOMORROW', K.OK);
   }
 
   // ============================================================
@@ -230,6 +238,15 @@ export class HomeScene {
     const L = this.layout();
     this._lavaBackground(ctx);
     this._topBar(ctx, L);
+    // v1.7: last month's season result, printed once — tap to dismiss
+    const sn = this.save._seasonNotice;
+    if (sn) {
+      const parts = ['LAST SEASON: RANK #' + sn.rank + ' — +' + (sn.reward?.shards || 0) + '\u25c6 +' + (sn.reward?.coins || 0) + '\u00a9'];
+      if (sn.reward?.avatar) parts.push('AVATAR EARNED');
+      if (sn.reward?.frame) parts.push('FRAME EARNED');
+      label(ctx, parts.join(' \u00b7 ') + '  (TAP TO DISMISS)', KW / 2, 40, K.GOLD, 6);
+      label(ctx, 'see Identity for your new look', KW / 2, 48, K.DIM, 5);
+    }
     this._stage(ctx, L);
     this._startButton(ctx, L);
     this._dashboard(ctx, L);
@@ -597,7 +614,7 @@ export class HomeScene {
       });
       glyph(ctx, g.icon, r.x + 8, r.y + 8, 16, claimed ? '#4a6a52' : done ? K.OK : '#ffd24a');
       label(ctx, g.label.replace('{n}', g.n), r.x + 30, r.y + 14, K.TXT, 7, 'left');
-      label(ctx, claimed ? 'CLAIMED' : '+' + GOAL_REWARD + ' COINS', r.x + r.w - 10, r.y + 14, claimed ? '#4a6a52' : done ? K.OK : K.GOLD, 7, 'right');
+      label(ctx, claimed ? 'CLAIMED' : '+' + goalReward(this.save) + ' COINS', r.x + r.w - 10, r.y + 14, claimed ? '#4a6a52' : done ? K.OK : K.GOLD, 7, 'right');
       // progress bar
       const bx = r.x + 30, by = r.y + 20, bw = r.w - 78;
       ctx.fillStyle = '#00000077'; ctx.fillRect(bx - 1, by - 1, bw + 2, 7);
@@ -606,6 +623,7 @@ export class HomeScene {
       ctx.fillRect(bx, by, Math.round(bw * Math.min(1, have / g.n)), 5);
       label(ctx, Math.min(have, g.n) + '/' + g.n, r.x + r.w - 10, by + 6, K.SUB, 6, 'right');
     });
+    label(ctx, 'GOAL STREAK ' + (s.dailyStreak || 0) + ' DAYS \u00b7 TODAY\'S PAYOUT ' + goalReward(s) + ' COINS', 6, 421, K.SUB, 6, 'left');
   }
 
   _tile(ctx, r, d, hov) {

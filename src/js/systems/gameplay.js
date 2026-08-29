@@ -14,7 +14,7 @@ import { Projectile, Meteor, Flame, Bomb, Pool, BlackHole } from '../entities/pr
 import { Pickup } from '../entities/pickup.js';
 import { Boss } from '../entities/boss.js';
 import { Train } from '../entities/train.js';
-import { REALMS, findRealm, findDifficulty, RELICS, LORE, hasDifficultyRule } from '../data/realms.js';
+import { REALMS, ACHIEVEMENTS, findRealm, findDifficulty, RELICS, LORE, hasDifficultyRule } from '../data/realms.js';
 import { ENDINGS, REALM_RELICS, findEnding } from '../data/endings.js';
 import { ASCENSIONS, APOCALYPSE_PROTOCOL, APOCALYPSE_CARDS, RARITY_COLORS, ROMAN,
   rollCards, apocalypseReady, findAscension, offerPool } from '../data/upgrades.js';
@@ -406,9 +406,10 @@ export class GameplayScene {
     if (this.boss?.alive) this.dealDamage(this.boss, dmg, { family: 'apocalypse', boss: true });
   }
   openChest() {
-    // a free upgrade card
+    // a free upgrade card + a printed +8 shard bounty
     this.pendingLevelUps += 1;
-    this.fx.banner(this.player.x, this.player.y - 30, 'RELIC CHEST', '#ffe066');
+    this.gameStats.shards += 8;
+    this.fx.banner(this.player.x, this.player.y - 30, 'RELIC CHEST — +8 SHARDS', '#ffe066');
     this._openCards();
   }
   spawnExplosion(x, y, radius, dmg, family) {
@@ -528,7 +529,8 @@ export class GameplayScene {
       if (e.eliteMod) { bumpGoal(this.save, 'elites', 1); if (this.challenge?.type === 'elites') this._challengeEliteKill(); }
       if (e === this.lieutenant) {
         this.lieutenant = null;
-        this.fx.banner(this.player.x, this.player.y - 50, 'LIEUTENANT DOWN — THE GAUNTLET WEAKENS', '#ffe066');
+        this.gameStats.shards += 40;
+        this.fx.banner(this.player.x, this.player.y - 50, 'LIEUTENANT DOWN — +40 SHARDS', '#ffe066');
         this.director.eliteT = Math.max(this.director.eliteT, 20);
       }
     } catch {}
@@ -567,7 +569,8 @@ export class GameplayScene {
     this.pickups.push(new Pickup(xpType, e.x, e.y, Math.round((e.xp || 4) * (this.routeMods?.xpMul ?? 1) * (this.difficulty.xpMult || 1))));
     if (e.eliteMod) {
       this.gameStats.elites++;
-      for (let i = 0; i < 3; i++) this.pickups.push(new Pickup('shard', e.x + rand(-6, 6), e.y + rand(-6, 6), 1));
+      for (let i = 0; i < 3; i++) this.pickups.push(new Pickup('shard', e.x + rand(-6, 6), e.y + rand(-6, 6), 4)); // 3 x 4 = exactly 12
+      this.fx.banner(e.x, e.y - 26, 'ELITE — +12 SHARDS', '#8ef0ff');
       if (Math.random() < 0.7) this.pickups.push(new Pickup('heart', e.x, e.y, 30));
       if (Math.random() < 0.35) this.pickups.push(new Pickup('chest', e.x, e.y, 1));
     } else {
@@ -596,8 +599,10 @@ export class GameplayScene {
     this._bossGate = false;
     this.gameStats.bosses++;
     try { bumpGoal(this.save, 'boss', 1); } catch {}
+    this.gameStats.shards += 60;
     this.time.slowmo(1.6, 0.25);
     this.camera.shake(1);
+    try { this.fx.banner(this.player.x, this.player.y - 60, 'BOSS DOWN — +60 SHARDS', '#ffe066'); } catch {}
     this.fx.explosion(b.x, b.y, 'explFire', 4, { lightColor: '#ffe066' });
     this.fx.banner(b.x, b.y - 40, b.name + ' DESTROYED', '#ffe066');
     for (let i = 0; i < 24; i++) this.pickups.push(new Pickup('coin', b.x + rand(-30, 30), b.y + rand(-30, 30), 10));
@@ -1042,7 +1047,7 @@ export class GameplayScene {
     if (loadout.includes('plating')) t.invuln = 3;
     this.fx.explosion(t.x, t.y, 'explFire', 3, { lightColor: '#ff7a33' });
     this.fx.ring(t.x, t.y, 90, '#ff9033', 0.6, 3);
-    this.fx.screenTint('#ff5a20', 0.3);
+    this.fx.screenTint(t.set.skin.pal.glow || '#ff5a20', 0.3);
     this.fx.banner(t.x, t.y - 46, 'FURNACE BURST! +1 REROLL', '#ff7a33');
     this.rerolls += 1;
     this.camera.shake(0.8);
@@ -1120,7 +1125,8 @@ export class GameplayScene {
       return;
     }
     if (tapped && inR(fire, input.mouse.x, input.mouse.y)) {
-      if (this.train.furnace >= this.train.furnaceMax &&
+      if (!this.train.dead && this.train.energy >= this.train.maxEnergy) this.train.activateUltimate(this, false);
+      else if (this.train.furnace >= this.train.furnaceMax &&
           dist(this.player.x, this.player.y, this.train.x, this.train.y) < 90) {
         this._furnaceBurst();
       }
@@ -1469,6 +1475,12 @@ export class GameplayScene {
     this._updateBossRule();
     this._updateMusic(rawDt);
     this._updateTouchButtons();
+    if (this.train.hp / this.train.maxHp < 0.25) this._trainHurt = true;
+    // ULTIMATE AGENCY: [Q] fires the train's ultimate when charged
+    if (this.input.wasPressed('KeyQ') && !this.train.dead && this.train.energy >= this.train.maxEnergy
+        && !this.train.overdrive) {
+      this.train.activateUltimate(this, false);
+    }
     // MEDICAL CAR: the medical car pulses a slow heal when you stay close
     if ((this.train.carriageLoadout || []).includes('medical') && !this.train.dead) {
       if (dist(this.player.x, this.player.y, this.train.x, this.train.y) < 70) {
@@ -1773,6 +1785,8 @@ export class GameplayScene {
     this._ended = true;
     const p = this.player;
     addCoins(this.save, this.runCoins);
+    // v1.7: shards collected in the run are banked too (they used to evaporate)
+    this.save.shards = (this.save.shards || 0) + (this.gameStats.shards || 0);
     this.save.stats.totalKills = (this.save.stats.totalKills || 0) + this.runStats.kills;
     this.save.stats.totalRuns = (this.save.stats.totalRuns || 0) + 1;
     this.save.stats.bestScore = Math.max(this.save.stats.bestScore || 0, p.score);
@@ -1796,11 +1810,8 @@ export class GameplayScene {
       }
     } catch {}
     saveSave(this.save);
-    this.engine.supabase?.submitScore?.({
-      score: p.score, time: this.runTime, stage: this.stage, realm: this.realmId,
-      kills: this.runStats.kills, character: this.save.charSkin, difficulty: this.difficulty.id,
-      challenge: this.weeklyChallenge?.id || null, playerId: this.save.playerId,
-    });
+    // v1.7: scores are NEVER posted automatically — the summary offers
+    // an opt-in button. Nothing leaves this device without a choice.
     this.engine.setScene('runSummary', {
       realmId: this.realmId, stage: this.stage, save: this.save, runStats: this.runStats,
       time: this.runTime, sectorDuration: this.sectorDuration, victory, coins: this.runCoins, level: p.level,
@@ -1809,8 +1820,38 @@ export class GameplayScene {
       ending: victory ? (this._ending || findEnding(this.realmId)) : null,
       cause: victory ? null : (extra.cause || this.lastHitBy || 'THE VOID'),
       relic: this.relicActive?.name || null,
+      score: Math.round(p.score || 0), difficulty: this.difficulty.id,
+      trainHurt: !!this._trainHurt, damageTaken: this.runStats.damageTaken,
     });
+    this._grantAchievements(victory);
   }
+  // v1.7: ACHIEVEMENTS — checked at run end, each pays a fixed shard bounty
+  _grantAchievements(victory) {
+    const got = this.save.achievements = this.save.achievements || [];
+    const paid = this.save.claimedAchievements = this.save.claimedAchievements || [];
+    const achDef = (id) => ACHIEVEMENTS.find(a => a.id === id);
+    const grant = (id) => {
+      if (got.includes(id)) return;
+      got.push(id);
+      try { SOUNDS.chest(); } catch {}
+      const def = achDef(id);
+      const bounty = def && def.reward ? def.reward : 0;
+      if (bounty > 0) {
+        this.save.shards = (this.save.shards || 0) + bounty;
+        if (!paid.includes(id)) paid.push(id);
+        this.bannerQueue = this.bannerQueue || [];
+        this.bannerQueue.push('ACHIEVEMENT — ' + String(def.name).toUpperCase() + ' · +' + bounty + ' SHARDS');
+      }
+    };
+    const kills = this.runStats.kills;
+    grant('first_departure');
+    if (this.bossDefeated) grant(this.realmId + '_clear');
+    if (this.realmId === 'terminus') grant('terminus');
+    if (kills >= 1000) grant('unstoppable');
+    if (this._trainHurt && this.player.alive) grant('train_defender');
+    if ((this.runStats.damageTaken || 0) === 0 && kills >= 10) grant('perfect_run');
+  }
+
   _buildParams() {
     return { save: this.save, realmId: this.realmId, stage: this.stage,
       difficulty: this.difficulty.id, runSeed: (Math.random() * 4294967295) >>> 0 };
@@ -2736,6 +2777,7 @@ export class GameplayScene {
     ctx.drawImage(coinF, W - 74, 8);
     text(ctx, fmtNum(this.runCoins), W - 62, 16, '#ffe878', 8, true);
     text(ctx, fmtTime(this.runTime)+' / '+fmtTime(this.sectorDuration), W - 74, 26, '#cfd4e0', 7);
+    text(ctx, '\u25c6 ' + fmtNum(this.gameStats.shards || 0), W - 74, 36, '#8ef0ff', 7, true);
     // sector timer bar
     {
       const pct = Math.max(0, this.sectorTimeLeft / this.sectorDuration);
@@ -2831,6 +2873,9 @@ export class GameplayScene {
     text(ctx, this.train.set.skin.name.toUpperCase().slice(0, 14), tx, ty + 5, '#cfd4e0', 6, true);
     drawBar(ctx, tx, ty + 8, tw, 5, this.train.hp / this.train.maxHp, '#74c04a', '#0e2410');
     drawBar(ctx, tx, ty + 15, tw, 4, this.train.energy / this.train.maxEnergy, '#8ef0ff', '#101a2a');
+    if (!this.train.dead && this.train.energy >= this.train.maxEnergy && !this.train.overdrive) {
+      text(ctx, 'Q — ULTIMATE READY', tx, ty - 4, Math.sin(this.runTime * 8) > 0 ? '#8ef0ff' : '#ffffff', 6, true);
+    }
     // furnace meter — the E-button promise, always visible
     const fk = Math.min(1, this.train.furnace / this.train.furnaceMax);
     drawBar(ctx, tx, ty + 21, tw, 4, fk, fk >= 1 ? '#ffd040' : '#c96a2a', '#241410');

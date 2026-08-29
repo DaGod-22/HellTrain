@@ -7,6 +7,10 @@
 // ============================================================
 
 export const GOAL_REWARD = 80;
+// the daily payout grows with your streak: 60 + 15 per day, capped at 180
+export function goalReward(save) {
+  return Math.min(180, 60 + 15 * (save?.dailyStreak || 0));
+}
 
 const POOL = [
   { key: 'kills', icon: 'skull', label: 'Defeat {n} foes today', ns: [60, 100, 150] },

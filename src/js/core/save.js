@@ -77,6 +77,14 @@ export function newSave() {
     weeklyBest: {},
     dailyBest: {},
     permaBoons: {},
+    // v1.7: season identity + leaderboard
+    avatar: 'conductor',
+    frame: null,
+    ownedAvatars: ['conductor'],
+    ownedFrames: [],
+    seasonRewards: {},
+    myBoards: {},
+    claimedAchievements: [],
   };
 }
 

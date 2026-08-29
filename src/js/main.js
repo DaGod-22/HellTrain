@@ -20,8 +20,9 @@ import {
   MenuScene, WorldMapScene, TrainBaseScene, RunSummaryScene, PauseScene,
   AchievementsScene, LeaderboardScene, DailyRunScene, WeeklyChallengeScene,
   SettingsScene, ArsenalScene, ArmouryScene, RelicsScene,
-  ProfileScene, DailyRewardsScene,
+  ProfileScene, DailyRewardsScene, IdentityScene,
 } from './ui/menu.js';
+import { settleSeason } from './data/season.js';
 
 async function boot() {
   const root = document.getElementById('root');
@@ -94,8 +95,19 @@ async function boot() {
   engine.addScene('shop', new ShopScene(engine));        // the Forge (permanent tracks + skins)
   engine.addScene('coinShop', new CoinShopScene(engine)); // coin shop (fixed-price goods)
   engine.addScene('profile', new ProfileScene(engine));
+  engine.addScene('identity', new IdentityScene(engine));
 
   if (typeof globalThis !== 'undefined') globalThis.__ENGINE__ = engine;
+  // v1.7: settle LAST month's season once (rank-locked avatar/frame + printed payouts).
+  // Non-blocking; offline or already-settled -> nothing happens.
+  try {
+    settleSeason(save, save.playerId, (period) => (engine.supabase && engine.supabase.topMonthly)
+      ? engine.supabase.topMonthly(period, 100) : Promise.resolve([]))
+      .then((res) => {
+        if (res && res.placed) { save._seasonNotice = res; saveSave(save); }
+      })
+      .catch(() => {});
+  } catch {}
   engine.setScene('menu');
   engine.start();
 

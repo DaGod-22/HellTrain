@@ -119,12 +119,40 @@ export class Train {
     this.wheelPhase = (this.wheelPhase + dt * (0.4 + speed * 0.02)) % 1;
     this.facing = this.vx < -6 ? -1 : this.vx > 6 ? 1 : (this.facing || 1);
 
-    // --- smoke plume ---
+    // --- smoke plume — every skin breathes in its own tongue ---
     if (Math.random() < 0.5) {
       const sk = this.set.skin;
-      ctx.fx.spawn({ x: this.x + 12 * (this.facing || 1), y: this.y - 26, vx: rand(-8, 8) - this.vx * 0.2,
-        vy: rand(-26, -12), color: sk.pal.smoke, life: rand(0.7, 1.4), size: rand(2, 3.6),
-        endSize: 6, additive: false, drag: 0.96, light: this.overdrive ? 0.3 : 0 });
+      const col = sk.smokeCol || sk.pal.smoke;
+      const plume = sk.plume || 'steam';
+      const px = this.x + 12 * (this.facing || 1), py = this.y - 26;
+      if (plume === 'fire') {
+        ctx.fx.spawn({ x: px + rand(-3, 3), y: py, vx: rand(-6, 6) - this.vx * 0.15,
+          vy: rand(-34, -20), color: col, life: rand(0.5, 0.9), size: rand(1.6, 2.6),
+          endSize: 0.4, additive: true, drag: 0.95, light: 0.25 });
+      } else if (plume === 'frost') {
+        ctx.fx.spawn({ x: px + rand(-4, 4), y: py, vx: rand(-10, 10), vy: rand(-18, -8),
+          color: col, life: rand(0.8, 1.3), size: 1.4, endSize: 0.2, additive: false, drag: 0.97 });
+        if (Math.random() < 0.25) ctx.fx.spawn({ x: px, y: py - 6, vx: 0, vy: -24, color: '#ffffff',
+          life: 0.5, size: 1.2, endSize: 0.1, additive: true });
+      } else if (plume === 'void') {
+        ctx.fx.spawn({ x: px + rand(-5, 5), y: py, vx: Math.sin(this.t * 3 + rand(0, 6)) * 14,
+          vy: rand(-20, -10), color: col, life: rand(0.9, 1.5), size: 2, endSize: 0.3,
+          additive: true, drag: 0.98, light: 0.2 });
+      } else if (plume === 'gold') {
+        ctx.fx.spawn({ x: px + rand(-4, 4), y: py, vx: rand(-8, 8), vy: rand(-30, -16),
+          color: Math.random() < 0.4 ? '#fff8d0' : col, life: rand(0.6, 1.1), size: 1.6,
+          endSize: 0.2, additive: true, drag: 0.96, light: 0.25 });
+      } else {
+        ctx.fx.spawn({ x: px, y: py, vx: rand(-8, 8) - this.vx * 0.2,
+          vy: rand(-26, -12), color: col, life: rand(0.7, 1.4), size: rand(2, 3.6),
+          endSize: 6, additive: false, drag: 0.96, light: this.overdrive ? 0.3 : 0 });
+      }
+    }
+    // moving spark trail from the wheels — the ground remembers the paint job
+    if (speed > 40 && Math.random() < 0.3) {
+      ctx.fx.spawn({ x: this.x + rand(-22, 22), y: this.y + 8, vx: -this.vx * 0.25,
+        vy: rand(-14, -4), color: this.set.skin.pal.trim, life: rand(0.2, 0.4),
+        size: 1.4, endSize: 0.1, additive: true, drag: 0.9 });
     }
     if (this.overdrive && Math.random() < 0.7) {
       ctx.fx.embers(this.x + rand(-26, 26), this.y + rand(-8, 8), '#ff5a33', 2);
@@ -137,8 +165,9 @@ export class Train {
       this.ultimateT -= dt;
       this._ultimateTick(dt, ctx);
     }
+    // v1.7: the ultimate is YOUR call — [Q] when charged. Only the
+    // Final Stop perma keeps the old auto-fire reflex.
     if (this.finalStop && this.ultimateCd <= 0) this.activateUltimate(ctx, true);
-    else if (this.energy >= this.maxEnergy && this.ultimateCd <= 0) this.activateUltimate(ctx, true);
 
     // --- aura ---
     if (this.auraDamage) {
