@@ -86,3 +86,23 @@ Ground rules kept in mind throughout: one self-contained page, no gambling (ever
 8. **Permadeath that wipes the Forge.** Losing a run is fine; losing forty hours of meta progress is a save-file grudge. Hard modes should challenge, not erase.
 9. **Uncapped damage-number spam.** 500 floating numbers per second at max damage. The caps (70 enemies, 80 projectiles) exist because readability dies first — numbers are information, not confetti.
 10. **Lore walls before every sector.** Two-minute unskippable story dumps. The first 30 seconds are for *playing*. The stop-cards already tell the story in two lines — keep it that way.
+
+---
+
+# The Bad Ideas, Round Two — 15 more ways to ruin it
+
+11. **Weapon durability.** Guns crack and break mid-run unless repaired with coins. Nothing says "fun" like your build rusting apart during a boss fight.
+12. **Ammo scarcity.** Core weapons need pickups to keep firing. Auto-fire is the heartbeat of a horde game; strangling it strangles everything.
+13. **Escort missions.** Protect a slow NPC who cheerfully wanders into the horde. The Lost Passenger waypoint is charming; a full escort mode would be misery.
+14. **Stealth sections.** Sudden "don't be seen" sequences in a loud, fiery horde shooter. Two genres, both sabotaged at once.
+15. **Platforming segments.** Jump puzzles across train roofs with pixel-perfect collision. These controls are built for twin-stick dodging, not ledge grabs.
+16. **Quick-time events.** Mash-to-escape grabs mid-combat. Twitch interruptions break the flow, and hurt one-handed/limited-mobility players.
+17. **Mandatory login & social popups.** Leaderboards gated behind accounts, share dialogs after every sector. A self-contained offline page should never demand social plumbing.
+18. **Currency fragmentation.** Five special currencies with conversion rates and fees. Nothing says "cash shop" like a wallet that needs a spreadsheet.
+19. **FOMO event exclusives.** Cosmetics and relics that vanish forever when the event ends. Punishes anyone whose life doesn't revolve around a train game's calendar.
+20. **Invisible rubber-banding.** Secretly nerfing your damage when you're doing well. Players smell fake difficulty, and it poisons every real success.
+21. **Massive hidden damage variance.** Rolls from 0.3x to 3x under the hood. When outcomes are random and unseen, learning the game becomes impossible.
+22. **Strobe abuse.** Full-screen flashing as a default "impact" effect with no toggle. Photosensitivity is a safety issue, not a vibe.
+23. **Unskippable voice tutorial.** A narrated walkthrough veterans must replay every run, with no mute. The first 30 seconds belong to playing, not a lecture.
+24. **Cloud-only saves.** The game phones home to verify progress. A single file that loses your save offline defeats its own reason to exist.
+25. **Direct pay-to-win upgrades.** Real-money damage boosts in the Forge. No dice, so "not gambling" — but worse: the scoreboard becomes a receipt.
