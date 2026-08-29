@@ -68,6 +68,14 @@ export class Projectile {
 
     // --- collisions ---
     if (this.owner === 'enemy') {
+      // arena cover: pillars eat enemy fire (yours passes clean over)
+      for (const pl of (ctx.pillars || [])) {
+        if (dist(this.x, this.y, pl.x, pl.y) < pl.r + this.size) {
+          this.alive = false;
+          ctx.fx.sparks(this.x, this.y, pl.color, 4, Math.atan2(this.y - pl.y, this.x - pl.x));
+          return;
+        }
+      }
       const p = ctx.player;
       if (p.alive && dist(this.x, this.y, p.x, p.y) < this.size + p.radius) {
         const dealt = p.takeDamage(this.dmg, ctx, null);

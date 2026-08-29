@@ -784,15 +784,15 @@ export class LeaderboardScene extends Page {
   render(ctx) {
     lavaBackground(ctx, this.t, this.embers);
     topBar(ctx, { title: 'LEADERBOARD', save: this.save, hover: null });
-    const board = AUTH.getLeaderboard();
-    sectionLabel(ctx, 'THIS STATION', 56);
-    board.slice(0, 8).forEach((u, i) => {
+    const locals = (this.save.localScores || []).slice(0, 6);
+    sectionLabel(ctx, 'YOUR BEST RUNS — THIS DEVICE', 56);
+    if (!locals.length) label(ctx, 'No runs recorded yet — take the train out.', KW / 2, 90, K.DIM, 6);
+    locals.forEach((r, i) => {
       const y = 66 + i * 26;
       tile(ctx, 8, y, KW - 16, 22, 7, { fill: i === 0 ? '#3a2a1a' : K.PANEL, fillLo: K.PANEL_LO, outline: i === 0 ? K.GOLD : K.INK, lift: 1 });
-      label(ctx, (i + 1) + '. ' + (u.username || 'CONDUCTOR').toUpperCase().slice(0, 16), 14, y + 15, i === 0 ? K.GOLD : K.TXT, 7, 'left');
-      label(ctx, 'LVL ' + (u.level || 1), KW - 14, y + 15, K.BLUE, 6, 'right');
+      label(ctx, (i + 1) + '. ' + fmtNum(r.score || 0) + ' PTS', 14, y + 15, i === 0 ? K.GOLD : K.TXT, 7, 'left');
+      label(ctx, `${(r.realm || '').toUpperCase().slice(0, 9)} · ST${r.stage} · ${r.kills || 0} KOs`, KW - 14, y + 15, K.BLUE, 6, 'right');
     });
-    if (!board.length) label(ctx, 'No local runs yet — take the train out.', KW / 2, 90, K.DIM, 6);
     sectionLabel(ctx, 'THE WIDER LINE — ONLINE', 288);
     if (this.loading) label(ctx, 'Reaching the network…', KW / 2, 310, K.DIM, 7);
     else if (!this.scores.length) label(ctx, 'Offline — showing local runs only.', KW / 2, 310, K.DIM, 6);
@@ -817,6 +817,7 @@ export class DailyRunScene extends Page {
     this.seed = seed;
     this.realm = REALMS[seed % REALMS.length];
     this.played = (this.save.dailyRuns || []).includes(String(seed));
+    this.best = (this.save.dailyBest || {})[String(seed)] || 0;
   }
   update(dt) {
     const m = super.base(dt);
@@ -843,7 +844,7 @@ export class DailyRunScene extends Page {
     label(ctx, 'SEED ' + this.seed, KW / 2, 160, K.BLUE, 7);
     const b = { x: KW / 2 - 80, y: 210, w: 160, h: 34 };
     button(ctx, b, this.played ? 'RUN IT AGAIN' : 'DEPART', { color: K.RED, hover: this._hov, size: 10, sub: 'Sector 1 · Normal difficulty' });
-    label(ctx, 'A fresh sector every midnight. Score is compared on the leaderboard.', KW / 2, 270, K.DIM, 6);
+    label(ctx, `Fresh sector every midnight · today's best: ${fmtNum(this.best || 0)}`, KW / 2, 270, K.DIM, 6);
     drawToast(ctx, this.toast);
   }
 }
@@ -856,7 +857,9 @@ export class WeeklyChallengeScene extends Page {
     super.enter(p);
     const d = new Date();
     const wk = Math.floor((Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / 86400000) / 7);
+    this.wk = wk;
     this.challenge = WEEKLY_CHALLENGES[wk % WEEKLY_CHALLENGES.length];
+    this.best = (this.save.weeklyBest || {})[wk] || 0;
   }
   update(dt) {
     const m = super.base(dt);
@@ -877,7 +880,7 @@ export class WeeklyChallengeScene extends Page {
     label(ctx, 'THIS WEEK\'S RULE', KW / 2, 80, K.SUB, 7);
     outlineText(ctx, this.challenge.name.toUpperCase(), KW / 2, 104, '#e0c8ff', '#2a0a3a', 13);
     label(ctx, this.challenge.desc, KW / 2, 124, K.SUB, 7);
-    label(ctx, 'Hard difficulty · Purgatory', KW / 2, 146, K.DIM, 6);
+    label(ctx, `Hard difficulty · Purgatory · your best this week: ${fmtNum(this.best || 0)}`, KW / 2, 146, K.DIM, 6);
     const b = { x: KW / 2 - 80, y: 200, w: 160, h: 34 };
     button(ctx, b, 'TAKE THE TRIAL', { color: '#6a3aff', hover: this._hov, size: 10, sub: 'Hard · rewards boss cores + shards' });
     label(ctx, 'One new rule every week. Plan the build around it.', KW / 2, 260, K.DIM, 6);
@@ -1067,15 +1070,34 @@ function fit(s, n) {
 // PAUSE
 // ====================================================================
 export class PauseScene extends Page {
-  enter(p) { super.enter(p); this.ctx2 = p.ctx; }
+  enter(p) { super.enter(p); this.ctx2 = p.ctx; this.tab = 0; }
   _goBack() { if (this.ctx2?.gameplay) this.engine.resumeScene(this.ctx2.gameplay); else this.engine.setScene('menu', { save: this.save }); }
   _buttons() {
     const w = 150, x = KW / 2 - w / 2;
+    if (this.tab === 1) return [
+      { label: 'BACK TO PAUSE', y: 234, x, w, h: 34, act: 'resume', color: K.BLUE },
+    ];
     return [
       { label: 'RESUME', y: 150, x, w, h: 34, act: 'resume', color: K.GREEN },
-      { label: 'SETTINGS', y: 192, x, w, h: 34, act: 'settings', color: K.BLUE },
-      { label: 'END RUN', y: 234, x, w, h: 34, act: 'quit', color: K.RED },
+      { label: 'YOUR BUILD', y: 192, x, w, h: 34, act: 'build', color: K.PURPLE || '#c07aff' },
+      { label: 'SETTINGS', y: 234, x, w, h: 34, act: 'settings', color: K.BLUE },
     ];
+  }
+  _buildLines() {
+    const g = this.ctx2?.gameplay;
+    if (!g?.player) return [];
+    const lines = [];
+    for (const w of g.player.weapons) {
+      const st = g.player.weaponStates[w.id] || { level: 1 };
+      lines.push({ l: `${w.name.toUpperCase()} — L${st.level}${w.evolved ? ' ★EVOLVED' : ''}`, c: w.color });
+    }
+    const owned = Object.entries(g.owned || {});
+    if (owned.length) lines.push({ l: '— CARDS —', c: K.DIM });
+    for (const [id, lvl] of owned.slice(0, 8)) {
+      lines.push({ l: `${id.replace(/_/g, ' ').toUpperCase()} ${lvl > 1 ? 'x' + lvl : ''}`, c: K.SUB });
+    }
+    lines.push({ l: `REROLLS ${g.rerolls ?? 0} · BANISHES ${g.banishes ?? 0} · KILLS ${g.runStats?.kills ?? 0}`, c: K.GOLD });
+    return lines;
   }
   update(dt) {
     const m = super.base(dt);
@@ -1083,7 +1105,8 @@ export class PauseScene extends Page {
     if (!this.grace(dt) && m.justDown) {
       for (const b of this._buttons()) {
         if (this.hit(b)) {
-          if (b.act === 'resume') this.engine.resumeScene(this.ctx2.gameplay);
+          if (b.act === 'resume') { this.tab = 0; this.engine.resumeScene(this.ctx2.gameplay); }
+          else if (b.act === 'build') { this.tab = 1; m.justDown = false; return; }
           else if (b.act === 'settings') this.engine.setScene('settings', { save: this.save, from: 'pause', ctx: this.ctx2 });
           else this.engine.setScene('runSummary', {
             save: this.save, realmId: this.ctx2?.gameplay?.realmId, stage: this.ctx2?.gameplay?.stage,
@@ -1104,8 +1127,17 @@ export class PauseScene extends Page {
   render(ctx) {
     lavaBackground(ctx, this.t, this.embers);
     tile(ctx, KW / 2 - 90, 100, 180, 200, 14, { fill: '#20182c', fillLo: '#140e1e', outline: K.INK, ring: K.GOLD, ringW: 2, lift: 5 });
-    outlineText(ctx, 'PAUSED', KW / 2, 130, '#ffffff', '#5a1a08', 16);
-    label(ctx, 'The void waits. The schedule doesn\'t.', KW / 2, 148, K.SUB, 6);
+    if (this.tab === 1) {
+      outlineText(ctx, 'YOUR BUILD', KW / 2, 126, '#ffffff', '#5a1a08', 14);
+      const lines = this._buildLines();
+      if (!lines.length) label(ctx, 'No build yet — go make one.', KW / 2, 170, K.DIM, 7);
+      lines.slice(0, 9).forEach((ln, i) => {
+        label(ctx, ln.l, KW / 2, 150 + i * 15, ln.c, 6);
+      });
+    } else {
+      outlineText(ctx, 'PAUSED', KW / 2, 130, '#ffffff', '#5a1a08', 16);
+      label(ctx, 'The void waits. The schedule doesn\'t.', KW / 2, 148, K.SUB, 6);
+    }
     for (const b of this._buttons()) {
       const hov = this.hit(b);
       button(ctx, b, b.label, { color: b.color, hover: hov, size: 9 });

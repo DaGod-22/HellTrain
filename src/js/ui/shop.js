@@ -6,7 +6,17 @@
 import { TAU, fmtNum } from '../core/utils.js';
 import { PLAYER_TRACKS, TRAIN_TRACKS, trackCost, totalSpent } from '../data/shop.js';
 import { CHAR_SKINS, TRAIN_SKINS } from '../data/skins.js';
-import { spendCoins, saveSave } from '../core/save.js';
+import { spendShards, saveSave } from '../core/save.js';
+
+// BOONS — one-time permanent perks, priced in shards, zero mystery
+export const FORGE_BOONS = [
+  { id: 'starterKit', name: "Conductor's Kit", cost: 120, icon: 'gift',
+    desc: 'Every run starts with +1 reroll and +1 banish.' },
+  { id: 'furnaceStart', name: 'Banked Coals', cost: 100, icon: 'fire',
+    desc: 'Every run starts with the furnace half stoked.' },
+  { id: 'extraBanish', name: 'Blacklist Ritual', cost: 150, icon: 'cross',
+    desc: 'One extra banish on every run, forever.' },
+];
 import { SOUNDS } from '../core/sound.js';
 import {
   KW, KH, K, tile, label, glyph, topBar, itemCard, drawTabs, List, drawToast,
@@ -38,6 +48,7 @@ export class ShopScene {
   items() {
     if (this.tab === 0) return PLAYER_TRACKS.map((t) => ({ kind: 'track', track: t }));
     if (this.tab === 1) return TRAIN_TRACKS.map((t) => ({ kind: 'track', track: t }));
+    if (this.tab === 3) return FORGE_BOONS.map((b) => ({ kind: 'boon', boon: b }));
     return [...CHAR_SKINS.map((s) => ({ kind: 'charSkin', skin: s })), ...TRAIN_SKINS.map((s) => ({ kind: 'trainSkin', skin: s }))];
   }
   _levelOf(track) { return this.save.permaLevels?.[track.id] || 0; }
@@ -53,16 +64,26 @@ export class ShopScene {
   }
   _price(item) {
     if (item.kind === 'track') { const l = this._levelOf(item.track); return l >= (item.track.max || 10) ? null : trackCost(item.track, l); }
+    if (item.kind === 'boon') return (this.save.permaBoons || {})[item.boon.id] ? null : item.boon.cost;
     return this._owned(item) ? null : item.skin.cost;
   }
   _buy(item) {
     if (!item) return;
     const save = this.save;
+    if (item.kind === 'boon') {
+      const b = item.boon;
+      save.permaBoons = save.permaBoons || {};
+      if (save.permaBoons[b.id]) return this.say('ALREADY YOURS', K.GOLD);
+      if (!spendShards(save, b.cost)) return this.say('NOT ENOUGH SHARDS', K.BAD);
+      save.permaBoons[b.id] = true; saveSave(save);
+      try { SOUNDS.levelup(); } catch {}
+      return this.say(b.name.toUpperCase() + ' — YOURS FOREVER', K.GOLD);
+    }
     if (item.kind === 'track') {
       const t = item.track; const l = this._levelOf(t);
       if (l >= (t.max || 10)) return this.say('ALREADY AT FULL RANK', K.GOLD);
       const cost = trackCost(t, l);
-      if (!spendCoins(save, cost)) return this.say('NOT ENOUGH COINS', K.BAD);
+      if (!spendShards(save, cost)) return this.say('NOT ENOUGH SHARDS — ELITES AND CHESTS PAY SHARDS', K.BAD);
       save.permaLevels = save.permaLevels || {}; save.permaLevels[t.id] = l + 1;
       saveSave(save);
       try { SOUNDS.levelup(); } catch {}
@@ -77,7 +98,7 @@ export class ShopScene {
         save[eqKey] = s.id; saveSave(save);
         this.say('EQUIPPED ' + s.name.toUpperCase(), K.OK);
       } else {
-        if (!spendCoins(save, s.cost)) return this.say('NOT ENOUGH COINS', K.BAD);
+        if (!spendShards(save, s.cost)) return this.say('NOT ENOUGH SHARDS — ELITES AND CHESTS PAY SHARDS', K.BAD);
         save[listKey].push(s.id); save[eqKey] = s.id; saveSave(save);
         try { SOUNDS.chest(); } catch {}
         this.say('UNLOCKED ' + s.name.toUpperCase(), K.GOLD);
@@ -95,8 +116,8 @@ export class ShopScene {
     const items = this.items();
     this.list.max = items.length;
     if (inp?.wasPressed?.('Escape')) { saveSave(this.save); this.engine.setScene(this.from, { save: this.save }); return; }
-    if (inp?.wasPressed?.('ArrowLeft')) { this.tab = (this.tab + 2) % 3; this.list.keyIndex = 0; this.list.scroll = 0; }
-    if (inp?.wasPressed?.('ArrowRight')) { this.tab = (this.tab + 1) % 3; this.list.keyIndex = 0; this.list.scroll = 0; }
+    if (inp?.wasPressed?.('ArrowLeft')) { this.tab = (this.tab + 3) % 4; this.list.keyIndex = 0; this.list.scroll = 0; }
+    if (inp?.wasPressed?.('ArrowRight')) { this.tab = (this.tab + 1) % 4; this.list.keyIndex = 0; this.list.scroll = 0; }
     let act = -1;
     if (inp?.wasPressed?.('ArrowDown')) act = this.list.scrollByKey(1);
     if (inp?.wasPressed?.('ArrowUp')) act = this.list.scrollByKey(-1);
@@ -126,8 +147,8 @@ export class ShopScene {
       ctx.fillRect(e.x | 0, e.y | 0, 1, e.s > 1 ? 2 : 1);
     }
     topBar(ctx, { title: 'THE FORGE', save: this.save, hover: null });
-    label(ctx, 'Coin ranks and skins — fixed prices, kept forever.', KW / 2, 40, K.SUB, 6);
-    const tabs = ['CONDUCTOR', 'TRAIN', 'SKINS'];
+    label(ctx, 'The shard forge — ranks, skins and boons. Fixed prices, kept forever.', KW / 2, 40, K.SUB, 6);
+    const tabs = ['CONDUCTOR', 'TRAIN', 'SKINS', 'BOONS'];
     const rects = drawTabs(ctx, tabs.map((t, i) => ({ id: i, label: t })), this.tab, 50);
     const items = this.items();
     const [a, b] = this.list.visibleRange();
@@ -146,7 +167,7 @@ export class ShopScene {
           name: item.track.name, desc: item.track.desc,
           right: price === null ? 'MAX RANK' : undefined,
           cost: price === null ? undefined : price,
-          costOk: price !== null && (this.save.coins || 0) >= price,
+          costOk: price !== null && (this.save.shards || 0) >= price,
           hover: this.list.hoverIndex === i, selected: this.list.keyIndex === i, appear,
         });
         // rank pips under the name
@@ -154,6 +175,16 @@ export class ShopScene {
           ctx.fillStyle = pi < lvl ? color : '#3a2e44';
           ctx.fillRect(r.x + 46 + pi * 7, r.y + 38, 5, 3);
         }
+      } else if (item.kind === 'boon') {
+        const owned = !!((this.save.permaBoons || {})[item.boon.id]);
+        itemCard(ctx, {
+          ...r, icon: item.boon.icon, iconColor: '#c07aff',
+          name: item.boon.name, desc: item.boon.desc,
+          owned,
+          cost: owned ? undefined : item.boon.cost,
+          costOk: (this.save.shards || 0) >= item.boon.cost,
+          hover: this.list.hoverIndex === i, selected: this.list.keyIndex === i, appear,
+        });
       } else {
         const owned = this._owned(item);
         itemCard(ctx, {
@@ -162,13 +193,13 @@ export class ShopScene {
           name: item.skin.name, desc: item.skin.desc,
           equipped: this._equipped(item), owned,
           cost: owned ? undefined : item.skin.cost,
-          costOk: (this.save.coins || 0) >= (item.skin.cost || 0),
+          costOk: (this.save.shards || 0) >= (item.skin.cost || 0),
           hover: this.list.hoverIndex === i, selected: this.list.keyIndex === i, appear,
         });
       }
     }
     this.list.drawScrollbar(ctx);
-    label(ctx, 'Spent at the forge: ' + fmtNum(totalSpent(this.save)) + ' coins', KW / 2, KH - 12, K.DIM, 6);
+    label(ctx, 'Shards come from elites and chests. Every price here is shards.', KW / 2, KH - 12, K.DIM, 6);
     drawToast(ctx, this.toast);
   }
 }

@@ -111,20 +111,20 @@ Ground rules kept in mind throughout: one self-contained page, no gambling (ever
 
 # Where v1.4 already falls short — 15 real parts that need work
 
-> **Items 26–30 were FIXED in v1.5.0.** The rest are still open.
+> **Items 26–30 were FIXED in v1.5.0. Items 31–40 were FIXED in v1.6.0.** All 15 critique items are now shipped.
 
 26. ~~**Enemy sprites recycle.**~~ **FIXED v1.5.0** — drawn-on variant decor: Star Wisp grows a rotating four-point star, Mirror Wisp a faceted diamond shell, Lost Soul a teal glow with drooping tails, Marsh Lurker swaying reeds, Slag Gobbler a chewing toothed maw.
 27. ~~**Elite pack hints under-report.**~~ **FIXED v1.5.0** — packs announce EVERY mod ('ELITE PACK! ARMORED + SWIFT'), and each elite flashes its own tag where it spawns.
 28. ~~**The train is a stat stick.**~~ **FIXED v1.5.0** — THE FURNACE: kills stoke it (2× fast beside the train); full meter + [E] near the engine = broadside + overdrive, and EACH carriage changes the burst (Gun Car +3 shells, Ammo 9s, Medical +25% heal, Engine instant ultimate, Vault coin spray, Plated 3s invuln). Loadout icons live in the HUD.
 29. ~~**Waypoints are walk-to-circle buffs.**~~ **FIXED v1.5.0** — waypoints are CONTESTED: themed wardens circle them (1.5× XP, gold tick) and value decays 100%→50% on a visible ring. Grab now through the guards, or clear them and settle for half.
 30. ~~**Difficulty is numbers-only.**~~ **FIXED v1.5.0** — every tier has a named rule: Easy SECOND WIND (survive one death per sector), Hard TWIN TROUBLE (paired elites), Nightmare VOLATILE ASH (corpses leave burning ground), Abyss IRON SKY (boss enrage at 30%, double-length weak windows), Infinite THE FULL EXPRESS (all three). Shown on the map and announced in-sector.
-31. **Sectors 2–3 are the same fight, longer.** 120→180→240s with no new content; patience tax, not escalation.
-32. **Energy gates PLAY.** 5 per run, 20s regen — an idle-game holdover that punishes engaged players; legacy saves start at 100.
-33. **Audio is one thin layer.** Two coexisting audio systems; all weapon sounds ride four synth tones; sectors have no music identity.
-34. **Reroll/banish are too rare to matter.** One each per run, no way to earn more; the interesting card tools go unused.
-35. **Random weapon grants remove agency.** Level%4 and cap-overflow hand out lottery weapons with a banner — against the previewed-rewards rule.
-36. **Offline players hit dead menus.** Leaderboards/weekly/profile login are shells for services that don't exist locally; no honest offline state.
-37. **The shops blur together.** Forge vs Coin Shop vs shard sinks overlap; currency purpose is unclear, shards have almost nothing to buy.
-38. **Boss fights are open-field kiting.** One cycle skeleton for all realms; no cover, no arena identity, subtle signature tells.
-39. **No build view mid-run.** Pause = resume/settings/quit; owned cards, weapon levels and mastery are invisible until death.
-40. **Gameplay has no touch controls.** Menus are thumb-friendly; the run still demands a keyboard.
+31. ~~**Sectors 2–3 are the same fight, longer.**~~ **FIXED v1.6.0** — stage 2+ adds CLOSING RING surges and 3-shot ranged volleys plus weaving swarmers; stage 3 adds THE GAUNTLET: a named Lieutenant mini-boss with a HUD health bar that drops a chest.
+32. ~~**Energy gates PLAY.**~~ **FIXED v1.6.0** — energy is gone entirely. The PLAY button says so: 'no energy, ever'.
+33. ~~**Audio is one thin layer.**~~ **FIXED v1.6.0** — each sector theme hums its own four-note synth loop (Emberfall saw-bass, Frostline bells, Eclipse chromatic, Overgrowth pentatonic); bosses double the tempo and add an octave voice. Weapon sounds now span twelve family-specific tones.
+34. ~~**Reroll/banish are too rare to matter.**~~ **FIXED v1.6.0** — every sector clear grants +1 of each (announced on the route banner), challenge doors grant +1 of each, Furnace Bursts grant +1 reroll, and Forge boons add more.
+35. ~~**Random weapon grants remove agency.**~~ **FIXED v1.6.0** — grants are now a three-card WEAPON PICK: exact name, damage, rate and description before you choose. No lottery.
+36. ~~**Offline players hit dead menus.**~~ **FIXED v1.6.0** — the game records YOUR BEST RUNS on-device (top 10, with realm/stage/kills), and the Daily Run and Weekly Trial pages show your local best. The board never lies about being yours.
+37. ~~**The shops blur together.**~~ **FIXED v1.6.0** — clean split: THE FORGE = shards (tracks, skins, plus three permanent BOONS: Conductor's Kit, Banked Coals, Blacklist Ritual); THE COIN WORKS = coins (rank upgrades only). Each currency has exactly one home.
+38. ~~**Boss fights are open-field kiting.**~~ **FIXED v1.6.0** — bosses now rise four themed COVER pillars that eat enemy fire (position, don't kite), and every signature attack flashes a white ring + '!' tell 0.55s before landing, with a rising cue tone.
+39. ~~**No build view mid-run.**~~ **FIXED v1.6.0** — pause now has a YOUR BUILD tab: every weapon with level and evolution stars, owned cards, rerolls/banishes, kills.
+40. ~~**Gameplay has no touch controls.**~~ **FIXED v1.6.0** — full twin-thumb: left side is a virtual joystick, right side has dash and contextual Furnace rings, every menu works by tap, and there's a pause pill. Desktop mouse users get the pause pill too.

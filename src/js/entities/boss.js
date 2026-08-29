@@ -365,14 +365,32 @@ export class Boss {
       this.vulnT = this._enraged ? 6.0 : 3.0;
       this.vx = 0; this.vy = 0;
     }
-    // Attack cycle: common beat -> signature beat -> common beat -> signature beat
+    // Attack cycle: common beat -> TELL -> signature beat -> common beat.
+    // Signatures flash a white ring + cue for 0.55s before landing —
+    // every big hit is signposted, every fight stays learnable.
     this.attackCd -= dt;
-    if (this.attackCd <= 0) {
+    if (this._tell) {
+      this._tell.t -= dt;
+      this.flashT = 0.06;
+      if (this._tell.t <= 0) {
+        const att = this._tell.att;
+        this._tell = null;
+        this._performAttack(att, ctx);
+        this.attackCd = (4.4 - this.phase * 0.25) * (this._enraged ? 0.7 : 1);
+        try { ctx.SOUNDS?.cue?.(this.moveIndex); } catch {}
+      }
+    } else if (this.attackCd <= 0) {
       const sig = this.moveIndex % 2 === 1;
-      const att = sig ? this.moves[Math.floor(this.moveIndex / 2) % this.moves.length] : 'slam';
-      this.moveIndex += 1;
-      this.attackCd = (sig ? (4.4 - this.phase * 0.25) : (3.4 - this.phase * 0.2)) * (this._enraged ? 0.7 : 1);
-      this._performAttack(att, ctx);
+      if (sig) {
+        this._tell = { att: this.moves[Math.floor(this.moveIndex / 2) % this.moves.length], t: 0.55 };
+        this.attackCd = 1; // placeholder; real cd set on release
+        try { SOUNDS.playTone(880, 0.3, 'square', 0.12, 0.6); } catch {}
+      } else {
+        const att = 'slam';
+        this.moveIndex += 1;
+        this._performAttack(att, ctx);
+        this.attackCd = (3.4 - this.phase * 0.2) * (this._enraged ? 0.7 : 1);
+      }
     }
     this._moveAI(dt, ctx);
 

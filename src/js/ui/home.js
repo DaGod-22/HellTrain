@@ -76,6 +76,7 @@ export class HomeScene {
   exit() { saveSave(this.save); this.engine.resetResolution?.(); }
 
   _regenEnergy() {
+    // obsolete since v1.6 — kept so old saves still load cleanly
     const s = this.save;
     if (s.energy === undefined) { s.energy = ENERGY_MAX; s.energyAt = Date.now(); }
     const now = Date.now();
@@ -187,9 +188,7 @@ export class HomeScene {
       if (i >= 0) this.realmIndex = i;
     }
     if (!this.realmUnlocked) return this._say('LOCKED — CLEAR THE REALM BEFORE IT', K.BAD);
-    this._regenEnergy();
-    if ((this.save.energy || 0) < ENERGY_COST) return this._say('NOT ENOUGH ENERGY — IT RECOVERS OVER TIME', K.BAD);
-    this.save.energy -= ENERGY_COST;
+    // v1.6: energy is GONE — the schedule never runs out. Play all you like.
     this.save.lastRealm = this.realm.id;
     saveSave(this.save);
     this.engine.setScene('gameplay', {
@@ -543,7 +542,7 @@ export class HomeScene {
   // ---- the big PLAY button ----
   _startButton(ctx, L) {
     const b = L.start;
-    const enough = (this.save.energy || 0) >= ENERGY_COST && this.realmUnlocked;
+    const enough = this.realmUnlocked;
     const hov = this.hover === 'start';
     const y = b.y + (hov ? 0 : 0);
     tile(ctx, b.x, y, b.w, b.h, 14, {
@@ -559,8 +558,7 @@ export class HomeScene {
       ctx.globalAlpha = 1;
     }
     outlineText(ctx, 'PLAY', KW / 2, y + 24, '#ffffff', '#7a1608', 20);
-    glyph(ctx, 'energy', KW / 2 - 26, y + 30, 13, enough ? '#ffe066' : '#c0b0a0');
-    label(ctx, ENERGY_COST + ' energy · ' + (this.save.energy ?? ENERGY_MAX) + ' left', KW / 2 + 22, y + 40, '#ffe9a0', 7);
+    label(ctx, this.realm.name.toUpperCase() + ' · ' + (this.engine._difficulty || 'normal').toUpperCase() + ' · no energy, ever', KW / 2, y + 40, '#ffe9a0', 6);
   }
 
   // ---- dashboard tiles ----

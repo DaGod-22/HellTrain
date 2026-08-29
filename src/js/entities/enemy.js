@@ -135,8 +135,12 @@ export class Enemy {
     if (this.ai === 'chase' || this.ai === 'tank' || this.ai === 'swarm' || this.ai === 'split') {
       if (d > 1) {
         const ang = Math.atan2(py - this.y, px - this.x);
-        this.vx = Math.cos(ang) * speed;
-        this.vy = Math.sin(ang) * speed;
+        // ESCALATION (stage 2+): swarmers weave as they close in
+        const weave = (this.ai === 'swarm' && (ctx.stage || 1) >= 2) ? Math.sin(this.aiT * 6) * 0.7 : 0;
+        this.aiT = (this.aiT || 0) + 0.016;
+        const wa = ang + weave;
+        this.vx = Math.cos(wa) * speed;
+        this.vy = Math.sin(wa) * speed;
       } else {
         this.vx = 0; this.vy = 0;
       }
@@ -154,14 +158,18 @@ export class Enemy {
       this.attackCd -= dt;
       if (this.attackCd <= 0 && d < 220) {
         // clarity governor: under heavy crowds, ranged enemies fire a touch slower
-        this.attackCd = (this.proj?.cd || 1.5) * (ctx.enemyFireMult || 1);
+        this.attackCd = (this.proj?.cd || 1.5) * (ctx.enemyFireMult || 1) * ((ctx.stage || 1) >= 2 ? 1.25 : 1);
         const ang = Math.atan2(py - this.y, px - this.x);
-        ctx.spawnProjectile({
-          x: this.x, y: this.y, vx: Math.cos(ang) * (this.proj?.spd || 160),
-          vy: Math.sin(ang) * (this.proj?.spd || 160), life: 1.6, dmg: this.proj?.dmg || 8,
-          color: this.proj?.id === 'fire_bolt' ? '#ff5a33' : '#9b6dff', owner: 'enemy',
-          size: 4, family: this.proj?.id === 'fire_bolt' ? 'fire' : 'void',
-        });
+        const shots = (ctx.stage || 1) >= 2 ? 3 : 1;   // ESCALATION: 3-shot fans
+        for (let i = 0; i < shots; i++) {
+          const off = (i - (shots - 1) / 2) * 0.16;
+          ctx.spawnProjectile({
+            x: this.x, y: this.y, vx: Math.cos(ang + off) * (this.proj?.spd || 160),
+            vy: Math.sin(ang + off) * (this.proj?.spd || 160), life: 1.6, dmg: this.proj?.dmg || 8,
+            color: this.proj?.id === 'fire_bolt' ? '#ff5a33' : '#9b6dff', owner: 'enemy',
+            size: 4, family: this.proj?.id === 'fire_bolt' ? 'fire' : 'void',
+          });
+        }
       }
     } else if (this.ai === 'summoner') {
       if (d > 160) {

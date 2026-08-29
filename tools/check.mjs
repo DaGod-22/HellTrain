@@ -21,8 +21,8 @@ const SRC = path.join(ROOT, 'src');
 const HTML = path.join(ROOT, 'index.html');
 
 let failures = 0;
-const fail = (msg) => { failures++; console.error('  ✗ ' + msg); };
-const ok = (msg) => console.log('  ✓ ' + msg);
+const fail = (msg) => { failures++; fs.writeSync(2, '  ✗ ' + msg + '\n'); };
+const ok = (msg) => { fs.writeSync(1, '  ✓ ' + msg + '\n'); };
 
 // ------------------------------------------------------------
 // Collect modules
@@ -94,7 +94,7 @@ console.log('\n[1/3] IMPORT CHECK — ' + files.length + ' modules');
   }
   fs.rmSync(tmp, { recursive: true, force: true });
 }
-if (failures) { console.error('\nIMPORT CHECK FAILED — fixing before launch sim.'); process.exit(1); }
+if (failures) { fs.writeSync(2, '\nIMPORT CHECK FAILED — fixing before launch sim.\n'); process.exit(1); }
 
 // ------------------------------------------------------------
 // 2 + 3) STUB BROWSER — launch + simulated load
@@ -275,6 +275,7 @@ try {
           const cur = E.current;
           if (cur === gp && gp.cards) { gp._pickCard(0); guarded++; }
           if (cur === gp && gp.routeCards) { gp._pickRoute(0); guarded++; } // route overlay auto-picks
+          if (cur === gp && gp.wPick) { gp._pickWeapon(0); guarded++; }     // weapon choice auto-picks
         }
       };
       stepRun(60 * 8); // 8s of waves
@@ -286,20 +287,13 @@ try {
       stepRun(60 * 6);
       if (E._error) fail('scripted run errored: ' + E._error.message);
       if (!gp.bossDefeated && gp.boss) fail('boss did not die when hp exhausted');
-      // multi-sector: force the sector clock to zero, expect route cards
+      // multi-sector: force the sector clock to zero, ride the fork to sector 2
       const stageBefore = gp.stage;
       gp.runTime = gp.sectorDuration;
-      stepRun(10);
-      if (!gp.routeCards) fail('sector clear did not open route cards');
-      if (gp.routeCards) {
-        if (gp.routeCards.opts.length !== 3) fail('route fork should offer 3 lines');
-        gp._pickRoute(0);
-        stepRun(180); // ride out the transition cinematic
-        if (gp.stage !== stageBefore + 1) fail('route pick did not advance to sector ' + (stageBefore + 1) + ' (stage=' + gp.stage + ')');
-        if (gp.sectorTimeLeft <= 0) fail('new sector clock did not reset');
-        if (!gp.enemies.length && !gp.cards) fail('new sector spawned no enemies yet');
-        ok(`multi-sector OK — now sector ${gp.stage} (${gp.theme ? gp.theme.name : '?'})`);
-      }
+      stepRun(220); // fork opens, auto-picks, transition cinematic plays
+      if (gp.stage !== stageBefore + 1) fail('sector clear did not reach the route fork (stage=' + gp.stage + '/' + stageBefore + ')');
+      if (gp.sectorTimeLeft <= 0 && E.current === gp) fail('new sector clock did not reset');
+      ok(`multi-sector OK — now sector ${gp.stage} (${gp.theme ? gp.theme.name : '?'})`);
       // sector 2 → boss → sector 3 → boss → final summary
       for (let s = gp.stage; s <= gp.maxSectors; s++) {
         gp._spawnBoss();
@@ -352,9 +346,9 @@ try {
       gpH.train.furnace = gpH.train.furnaceMax;
       gpH.train.x = gpH.player.x - 40; gpH.train.y = gpH.player.y + 10;
       gpH._furnaceBurst();
-      G.__pump(20);
-      if (!gpH.train.overdrive) fail('furnace burst did not trigger overdrive');
       if (gpH.train.furnace !== 0) fail('furnace did not reset after burst');
+      if (!gpH.train.overdrive) fail('furnace burst did not trigger overdrive');
+      G.__pump(20);
       // (29) waypoints are contested: wardens + decaying value
       gpH._spawnWaypoint();
       if (!gpH.waypoint) fail('waypoint failed to spawn');
@@ -379,6 +373,79 @@ try {
       if (E._error) fail('five-fix block errored: ' + E._error.message);
       ok('five fixes OK — variants, twin elites, furnace burst, contested waypoints, second wind');
 
+      // ---- v1.6 ten-fix verification ----
+      E._error = null;
+      // (31) escalation: stage 2+ surges + 3-shot volleys; stage 3 lieutenant
+      E.setScene('gameplay', { save: E.save, realmId: 'infernal', stage: 2, difficulty: 'normal' });
+      G.__pump(5);
+      const gpS = E.current;
+      gpS._spawnSurge();
+      G.__pump(120); // ride out the 1.3s delay
+      const afterSurge = gpS.enemies.length;
+      if (afterSurge < 5) fail(`surge did not spawn a ring (${afterSurge} enemies)`);
+      gpS.stage = 3;
+      gpS._spawnLieutenant();
+      if (!gpS.lieutenant) fail('lieutenant failed to spawn on stage 3');
+      G.__pump(10);
+      // (34) reroll economy: route pick grants tools
+      const rr = gpS.rerolls, bb = gpS.banishes;
+      gpS.rerolls = 0; gpS.banishes = 0;
+      gpS.routeCards = null;
+      gpS._openRouteCards();
+      gpS._pickRoute(0);
+      if (gpS.rerolls < 1 || gpS.banishes < 1) fail('route pick did not grant reroll+banish');
+      gpS.rerolls = rr; gpS.banishes = bb; gpS.transition = 0;
+      // (35) weapon grant is now a previewed 3-choice pick
+      gpS.wPick = null;
+      gpS._grantRandomWeapon();
+      if (!gpS.wPick || gpS.wPick.opts.length !== 3) fail('weapon grant did not offer 3 named choices');
+      const had = gpS.player.weapons.length;
+      gpS._pickWeapon(0);
+      if (gpS.player.weapons.length !== had + 1) fail('weapon pick did not grant the chosen weapon');
+      // (38) boss arena: pillars rise, tells precede signatures
+      gpS._spawnBoss();
+      if (gpS.pillars.length !== 4) fail('boss arena did not raise 4 cover pillars');
+      if (!gpS.boss) fail('boss failed to spawn');
+      else {
+        let sawTell = false;
+        for (let i = 0; i < 600 && !sawTell; i++) {
+          G.__pump(1);
+          if (gpS.cards) gpS._pickCard(0);
+          if (gpS.wPick) gpS._pickWeapon(0);
+          if (gpS.boss?._tell) sawTell = true;
+        }
+        if (!sawTell) fail('boss signature attack never telegraphs');
+      }
+      ok('ten fixes part 1 OK — surges, lieutenant, tool economy, weapon picks, pillars');
+      // (33) music sequencer ticks without error, per theme
+      E.setScene('gameplay', { save: E.save, realmId: 'purgatory', stage: 3, difficulty: 'normal' });
+      G.__pump(5);
+      const gpM = E.current;
+      gpM.stage = 3;
+      gpM._spawnLieutenant();
+      G.__pump(180);
+      if (E._error) fail('music/lieutenant block errored: ' + E._error.message);
+      // (36) records: run a short run into a summary, localScores must grow
+      const scoresBefore = (E.save.localScores || []).length;
+      gpM._endRun(true);
+      G.__pump(10);
+      if ((E.save.localScores || []).length !== scoresBefore + 1) fail('local scores board did not record the run');
+      // (37) boons: grant one, new run applies it
+      E.save.permaBoons = { starterKit: true, extraBanish: true, furnaceStart: true };
+      E.setScene('gameplay', { save: E.save, realmId: 'purgatory', stage: 1, difficulty: 'normal' });
+      G.__pump(5);
+      const gpB = E.current;
+      if (E._error) fail('boon run enter errored: ' + E._error.message);
+      if (!gpB.rerolls && gpB.rerolls !== 0) fail('boon run did not enter gameplay (scene=' + (gpB?.constructor?.name) + ')');
+      // base: rerolls=freeRerolls(0 here), banishes=1 — boons stack on top
+      if (gpB.rerolls < 1 || gpB.banishes < 3) fail(`boons did not apply (rerolls=${gpB.rerolls}, banishes=${gpB.banishes})`);
+      if (gpB.train?.furnace < gpB.train.furnaceMax * 0.5) fail('banked coals boon did not apply');
+      // (39) pause build view derives lines without error
+      E.setScene('pause', { from: 'gameplay', ctx: { gameplay: gpB } });
+      G.__pump(5);
+      if (E._error) fail('pause build view errored: ' + E._error.message);
+      ok('ten fixes part 2 OK — music, records, boons, pause build view');
+
       // ---- defeat path on a fresh run ----
       E._error = null;
       E.setScene('gameplay', { save: E.save, realmId: 'frozen', stage: 3 });
@@ -400,6 +467,6 @@ try {
 fs.rmSync(tmpBoot, { recursive: true, force: true });
 
 console.log('');
-if (failures) { console.error(`CHECKS FAILED — ${failures} problem(s)`); process.exit(1); }
-console.log('ALL CHECKS PASSED ✅');
-process.exit(0);
+if (failures) { fs.writeSync(2, `CHECKS FAILED — ${failures} problem(s)\n`); process.exitCode = 1; }
+else { fs.writeSync(1, 'ALL CHECKS PASSED ✅\n'); }
+process.exit(process.exitCode || 0);

@@ -72,6 +72,11 @@ export function newSave() {
     // v1.4: per-family weapon mastery kills + daily goal tracking
     familyKills: {},
     dailyGoals: { date: '', goals: [], p: { kills: 0, coins: 0, elites: 0, boss: 0 }, claimed: [] },
+    // v1.6: offline-first records + Forge boons
+    localScores: [],
+    weeklyBest: {},
+    dailyBest: {},
+    permaBoons: {},
   };
 }
 
@@ -106,4 +111,19 @@ export function spendCoins(save, n) {
   if ((save.coins || 0) < n) return false;
   save.coins -= n;
   return true;
+}
+export function addShards(save, n) {
+  save.shards = Math.max(0, (save.shards || 0) + n);
+}
+export function spendShards(save, n) {
+  if ((save.shards || 0) < n) return false;
+  save.shards -= n;
+  return true;
+}
+// remember a run on this device (local records board)
+export function recordLocalScore(save, entry) {
+  save.localScores = save.localScores || [];
+  save.localScores.push(entry);
+  save.localScores.sort((a, b) => b.score - a.score);
+  save.localScores.length = Math.min(save.localScores.length, 10);
 }

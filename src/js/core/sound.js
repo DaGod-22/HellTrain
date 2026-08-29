@@ -61,9 +61,15 @@ export class SoundSystem {
     if (crit) setTimeout(()=>this.playTone(1200,0.15,'sawtooth',0.2,0.6), 40);
   }
   shoot(kind='fire') {
-    const map = { fire: [600,0.12,'square'], ice:[900,0.1,'sine'], lightning:[1200,0.08,'sawtooth'], orbital:[300,0.2,'triangle'] };
+    const map = {
+      fire: [600,0.12,'square'], ice:[900,0.1,'sine'], lightning:[1200,0.08,'sawtooth'], orbital:[300,0.2,'triangle'],
+      void:[220,0.22,'sine'], toxic:[340,0.16,'triangle'], spirit:[760,0.14,'sine'], explosive:[150,0.18,'square'],
+      mirror:[1000,0.1,'triangle'], tech:[440,0.14,'sawtooth'], plasma:[820,0.09,'square'], physical:[180,0.12,'square'],
+    };
     const [f,d,ty] = map[kind]||[500,0.1,'sine'];
     this.playTone(f,d,ty,0.15,1.5);
+    if (kind==='void') setTimeout(()=>this.playTone(110,0.2,'sine',0.1,0.6),50);
+    if (kind==='spirit') setTimeout(()=>this.playTone(1140,0.12,'sine',0.08,1.4),70);
   }
   pickup() { this.playTone(600,0.2,'sine',0.25,2); setTimeout(()=>this.playTone(900,0.2,'sine',0.2,1.5),80); }
   levelup() {

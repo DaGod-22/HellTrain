@@ -21,7 +21,7 @@ import { ASCENSIONS, APOCALYPSE_PROTOCOL, APOCALYPSE_CARDS, RARITY_COLORS, ROMAN
 import { applyPermaToPlayer, applyPermaToTrain } from '../data/shop.js';
 import { checkSynergies } from '../data/upgrades_bridge.js';
 import { WEAPONS, findWeapon } from '../data/weapons.js';
-import { addCoins, saveSave } from '../core/save.js';
+import { addCoins, saveSave, recordLocalScore } from '../core/save.js';
 import { SOUNDS } from '../core/sound.js';
 import { masteryMult } from '../data/mastery.js';
 import { bumpGoal } from '../data/goals.js';
@@ -135,6 +135,15 @@ const CHALLENGE_TYPES = [
   { id: 'core', name: 'SHIELD CORE', icon: 'target', reward: 400,
     goal: 'BREAK THE SHIELD CORE', rewardText: '400 COINS' },
 ];
+// SECTOR MUSIC — each theme hums its own four-note loop; bosses double
+// the tempo. Pure synthesis, volume tied to the sound setting.
+const THEME_MUSIC = {
+  emberfall: { notes: [110, 131, 98, 110], step: 0.42, type: 'sawtooth', vol: 0.045 },
+  frostline: { notes: [392, 523, 440, 349], step: 0.55, type: 'sine', vol: 0.05 },
+  eclipse:   { notes: [147, 156, 110, 123], step: 0.5, type: 'triangle', vol: 0.05 },
+  overgrowth:{ notes: [196, 220, 262, 196], step: 0.46, type: 'triangle', vol: 0.045 },
+};
+
 // elite modifier -> the one-line hint shown when it spawns
 const ELITE_HINTS = {
   armoured: 'ARMORED ELITE — shatter its shell first!',
@@ -264,6 +273,16 @@ export class GameplayScene {
     this.hazards = [];              // VOLATILE ASH burning ground
     this._secondWindUsed = false;   // SECOND WIND rule, once per sector
     this._furnaceHintDone = false;
+    this.pillars = [];              // boss-arena cover, themed per sector
+    this.surgeT = 26;               // ESCALATION: ring-surge timer (stage 2+)
+    this.lieutenant = null;         // THE GAUNTLET: named mini-boss (stage 3)
+    this.lieutenantT = 20;
+    this._musicT = 0; this._musicStep = 0;
+    // FORGE BOONS — bought with shards, honest and permanent
+    const boons = this.save.permaBoons || {};
+    if (boons.starterKit) { this.rerolls += 1; this.banishes += 1; }
+    if (boons.extraBanish) this.banishes += 1;
+    if (boons.furnaceStart) this.train.furnace = Math.round(this.train.furnaceMax * 0.5);
 
     // veteran perma: start with extra levels
     for (let i = 0; i < (this.player.startLevelBonus || 0); i++) {
@@ -507,6 +526,11 @@ export class GameplayScene {
       if (fam) this.save.familyKills[fam] = (this.save.familyKills[fam] || 0) + 1;
       bumpGoal(this.save, 'kills', 1);
       if (e.eliteMod) { bumpGoal(this.save, 'elites', 1); if (this.challenge?.type === 'elites') this._challengeEliteKill(); }
+      if (e === this.lieutenant) {
+        this.lieutenant = null;
+        this.fx.banner(this.player.x, this.player.y - 50, 'LIEUTENANT DOWN — THE GAUNTLET WEAKENS', '#ffe066');
+        this.director.eliteT = Math.max(this.director.eliteT, 20);
+      }
     } catch {}
 
     // THE FURNACE: kills stoke the train. Fight BESIDE the iron horse and
@@ -707,15 +731,54 @@ export class GameplayScene {
     this.cardT = 0;
   }
   _grantRandomWeapon() {
+    // v1.6: no more lottery — you SEE three named weapons and pick one
     const p = this.player;
-    const pool = WEAPONS.filter(w => !p.hasWeapon(w.id));
+    const pool = WEAPONS.filter(w => !p.hasWeapon(w.id) && !w.req);
     if (pool.length && p.weapons.length < 4) {
-      const w = pool[randInt(0, pool.length - 1)];
-      p.addWeapon(w.id);
-      this.fx.banner(p.x, p.y - 30, 'NEW WEAPON: ' + w.name.toUpperCase(), w.color);
+      const opts = [];
+      const bag = pool.slice();
+      while (opts.length < Math.min(3, pool.length) && bag.length) {
+        opts.push(bag.splice(randInt(0, bag.length - 1), 1)[0]);
+      }
+      this.wPick = { opts, t: 0, idx: -1 };
+      try { SOUNDS.chest(); } catch {}
     } else {
       p.heal(p.maxHp * 0.25);
+      this.fx.banner(p.x, p.y - 30, 'ARSENAL FULL — HEALED 25%', '#7ae06a');
     }
+  }
+  _wpickGeometry() {
+    const n = this.wPick.opts.length;
+    const w = 118, h = 128, gap = 10;
+    const total = n * w + (n - 1) * gap;
+    const x0 = (CFG.VIEW_W - total) / 2;
+    const y = 92;
+    return this.wPick.opts.map((_, i) => ({ x: x0 + i * (w + gap), y, w, h }));
+  }
+  _updateWPick() {
+    const input = this.input;
+    const mx = input.mouse.x, my = input.mouse.y;
+    const geo = this._wpickGeometry();
+    this.wPick.idx = -1;
+    for (let i = 0; i < geo.length; i++) {
+      const g = geo[i];
+      if (mx >= g.x && mx <= g.x + g.w && my >= g.y && my <= g.y + g.h) this.wPick.idx = i;
+    }
+    for (let i = 0; i < geo.length; i++) {
+      if (input.wasPressed('Digit' + (i + 1)) || input.wasPressed('Numpad' + (i + 1))) { this._pickWeapon(i); return; }
+    }
+    if (input.wasPressed('ArrowRight')) this.wPick.idx = Math.min(geo.length - 1, (this.wPick.idx < 0 ? 0 : this.wPick.idx + 1));
+    if (input.wasPressed('ArrowLeft')) this.wPick.idx = Math.max(0, (this.wPick.idx < 0 ? geo.length - 1 : this.wPick.idx - 1));
+    if ((input.wasPressed('Enter') || input.wasPressed('Space')) && this.wPick.idx >= 0) { this._pickWeapon(this.wPick.idx); return; }
+    if (input.mouse.justDown && this.wPick.idx >= 0) this._pickWeapon(this.wPick.idx);
+  }
+  _pickWeapon(i) {
+    const w = this.wPick.opts[i];
+    if (!w) return;
+    this.wPick = null;
+    this.player.addWeapon(w.id);
+    this.fx.banner(this.player.x, this.player.y - 30, 'NEW WEAPON: ' + w.name.toUpperCase(), w.color);
+    try { SOUNDS.levelup(); } catch {}
   }
   _pickCard(i) {
     const pick = this.cards?.[i];
@@ -846,7 +909,9 @@ export class GameplayScene {
     this.routeMods = pick.mods;
     this.routeName = pick.name;
     this.transition = 2.0;
-    this.fx.banner(this.player.x, this.player.y - 56, 'SECTOR ' + this.stage + ' CLEARED', '#ffe066');
+    // the fork pays in tools too: every sector clear earns +1 reroll, +1 banish
+    this.rerolls += 1; this.banishes += 1;
+    this.fx.banner(this.player.x, this.player.y - 56, 'SECTOR ' + this.stage + ' CLEARED — +1 REROLL +1 BANISH', '#ffe066');
     this.fx.explosion(this.player.x, this.player.y, 'explHoly', 2, { lightColor: pick.color });
     try { SOUNDS.levelup(); } catch {}
   }
@@ -879,6 +944,8 @@ export class GameplayScene {
     this._sectorWarned30 = false; this._sectorWarned10 = false;
     this.director = { t: 0, wave: 0, nextWave: 3, budget: 0, eliteT: 45 * (m.eliteMul || 1), chestT: m.chestFast ? 35 : 38 };
     this.boss = null; this.bossSpawned = false; this.bossDefeated = false;
+    this.pillars.length = 0;
+    this.surgeT = 26; this.lieutenant = null; this.lieutenantT = 20;
     this._bossGate = false;
     this.stopCard = 1.4;
     // new theme
@@ -976,7 +1043,8 @@ export class GameplayScene {
     this.fx.explosion(t.x, t.y, 'explFire', 3, { lightColor: '#ff7a33' });
     this.fx.ring(t.x, t.y, 90, '#ff9033', 0.6, 3);
     this.fx.screenTint('#ff5a20', 0.3);
-    this.fx.banner(t.x, t.y - 46, 'FURNACE BURST!', '#ff7a33');
+    this.fx.banner(t.x, t.y - 46, 'FURNACE BURST! +1 REROLL', '#ff7a33');
+    this.rerolls += 1;
     this.camera.shake(0.8);
     try { SOUNDS.explosion(1.2); } catch {}
   }
@@ -1009,6 +1077,57 @@ export class GameplayScene {
       try { SOUNDS.boss(); } catch {}
     }
   }
+  // SECTOR MUSIC — four-note loop per theme; bosses drive it harder
+  _updateMusic(dt) {
+    if (this.save.settings?.sound === 0) return;
+    const m = THEME_MUSIC[this.theme?.id];
+    if (!m) return;
+    const bossRush = !!this.boss?.alive;
+    this._musicT += dt;
+    const step = m.step * (bossRush ? 0.72 : 1);
+    if (this._musicT >= step) {
+      this._musicT = 0;
+      const f = m.notes[this._musicStep % m.notes.length];
+      this._musicStep++;
+      try {
+        SOUNDS.playTone(f, bossRush ? 0.22 : 0.34, m.type, bossRush ? m.vol * 1.4 : m.vol, 1);
+        if (bossRush) SOUNDS.playTone(f * 2, 0.1, 'sine', m.vol * 0.5, 1);
+      } catch {}
+    }
+  }
+
+  // TOUCH CONTROLS — pause pill, dash ring, furnace ring (touch only)
+  _updateTouchButtons() {
+    const input = this.input;
+    if (!input.touchSeen || this.cards || this.routeCards || this.wPick) return;
+    const H = CFG.VIEW_H, W = CFG.VIEW_W;
+    const dash = { x: W - 34, y: H - 40, r: 20 };
+    const fire = { x: W - 78, y: H - 34, r: 15 };
+    const pause = { x: 16, y: 24, r: 12 };
+    const tapped = input.mouse.justDown;
+    const inR = (b, x, y) => (x - b.x) ** 2 + (y - b.y) ** 2 <= b.r * b.r;
+    // pause pill (mouse users get it too — discoverable, top-left)
+    if (tapped && inR(pause, input.mouse.x, input.mouse.y)) {
+      input.endFrame();
+      this.engine.setScene('pause', { from: 'gameplay', ctx: this });
+      return;
+    }
+    if (input.joy) return; // the steering thumb doesn't press buttons
+    if (tapped && inR(dash, input.mouse.x, input.mouse.y)) {
+      const ab = this.player.abilities[0];
+      if (ab) this._useAbility(ab);
+      input.mouse.justDown = false;
+      return;
+    }
+    if (tapped && inR(fire, input.mouse.x, input.mouse.y)) {
+      if (this.train.furnace >= this.train.furnaceMax &&
+          dist(this.player.x, this.player.y, this.train.x, this.train.y) < 90) {
+        this._furnaceBurst();
+      }
+      input.mouse.justDown = false;
+    }
+  }
+
   // SECOND WIND rule (Easy): the first killing blow each sector is survived
   secondWind() {
     if (!hasDifficultyRule(this.difficulty, 'second_wind') || this._secondWindUsed) return false;
@@ -1046,7 +1165,8 @@ export class GameplayScene {
     this.challenge = null;
     this.challengesWon++;
     this.addRunCoins(c.reward);
-    this.fx.banner(this.player.x, this.player.y - 56, 'CHALLENGE COMPLETE — +' + c.reward + ' COINS', '#ffe066');
+    this.rerolls += 1; this.banishes += 1;
+    this.fx.banner(this.player.x, this.player.y - 56, 'CHALLENGE COMPLETE — +' + c.reward + ' COINS, +1 REROLL, +1 BANISH', '#ffe066');
     this.fx.explosion(this.player.x, this.player.y, 'explHoly', 2, { lightColor: '#ffe066' });
     try { SOUNDS.chest(); } catch {}
   }
@@ -1109,6 +1229,19 @@ export class GameplayScene {
     }
     // boss timer
     if (!this.bossSpawned && (d.t > this.sectorDuration*0.7 || d.t > 90 + this.stage*10)) this._spawnBoss();
+
+    // ---- ESCALATION (stage 2+): CLOSING RING surges ----
+    if (this.stage >= 2 && !this.bossSpawned) {
+      this.surgeT -= dt;
+      if (this.surgeT <= 0) {
+        this.surgeT = 26;
+        this._spawnSurge();
+      }
+    }
+    // ---- THE GAUNTLET (stage 3): a named lieutenant with a health bar ----
+    if (this.stage >= 3 && !this.lieutenant && !this.bossSpawned && d.t > this.lieutenantT) {
+      this._spawnLieutenant();
+    }
   }
 
   _spawnElite() {
@@ -1142,6 +1275,48 @@ export class GameplayScene {
         'ELITE PACK! ' + packMods.map(m => ELITE_SHORT[m] || 'ELITE').join(' + '), '#ff8a30');
     }
   }
+  _spawnSurge() {
+    // a ring closes in — telegraphed, loud, dodgeable
+    const x = this.player.x, y = this.player.y;
+    this.telegraphs.push({ type: 'circle', x, y, r: 130, t: 1.3, dur: 1.3, color: '#ff5a33' });
+    this.fx.banner(this.player.x, this.player.y - 50, 'SURGE — THE RING CLOSES!', '#ff5a33');
+    this.delay(1.3, () => {
+      const themed = this.theme.roster;
+      const roster = this.world.pickEnemyRoster(this.stage);
+      const pool = themed.length ? themed : roster;
+      const n = 6 + this.stage;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * TAU;
+        const e = this.spawnEnemy(pool[randInt(0, pool.length - 1)],
+          this.player.x + Math.cos(a) * 140, this.player.y + Math.sin(a) * 110);
+        if (e) { e.maxHp *= 0.8; e.hp = e.maxHp; }
+      }
+      this.fx.ring(this.player.x, this.player.y, 140, '#ff5a33', 0.5, 3);
+      try { SOUNDS.boss(); } catch {}
+    });
+  }
+  _spawnLieutenant() {
+    const themed = this.theme.roster;
+    const roster = this.world.pickEnemyRoster(this.stage);
+    const pool = themed.length ? themed : roster;
+    const a = rand(0, TAU);
+    const e = this.spawnEnemy(pool[randInt(0, pool.length - 1)],
+      this.player.x + Math.cos(a) * 160, this.player.y + Math.sin(a) * 140);
+    if (!e) { this.lieutenantT = 6; return; }
+    this._applyEliteMod(e, 'giant');
+    e.hp = e.maxHp = e.maxHp * 5;
+    e.name = 'THE LIEUTENANT';
+    e.xp = (e.xp || 20) * 3;
+    this.lieutenant = e;
+    this.fx.banner(this.player.x, this.player.y - 50, 'THE LIEUTENANT HAS ARRIVED', '#ff4d6a');
+    try { SOUNDS.boss(); } catch {}
+    this.delay(0.6, () => {
+      const drop = this.lieutenant;
+      if (!drop) return;
+      this.pickups.push(new Pickup('chest', drop.x, drop.y, 1));
+      for (let i = 0; i < 3; i++) this.pickups.push(new Pickup('heart', drop.x + rand(-10, 10), drop.y + rand(-8, 8), 40));
+    });
+  }
   _applyEliteMod(e, mod) {
     const map = {
       armoured: () => { e.hp *= 2.4; e.radius += 1; },
@@ -1164,6 +1339,16 @@ export class GameplayScene {
     const def = findRealm(this.realmId).boss;
     if (!def) return;
     this.bossSpawned = true;
+    // ARENA IDENTITY: four themed cover pillars rise around the field —
+    // they block ENEMY fire only, so smart positioning beats kiting
+    const pal = { emberfall: '#ff7a33', frostline: '#7ec8ff', eclipse: '#c07aff', overgrowth: '#98e066' };
+    const pc = pal[this.theme?.id] || '#c0c0d8';
+    const cx = this.player.x, cy = this.player.y;
+    for (let i = 0; i < 4; i++) {
+      const a = i * (TAU / 4) + TAU / 8;
+      this.pillars.push({ x: cx + Math.cos(a) * 115, y: cy + Math.sin(a) * 95, r: 11, color: pc, t: 0 });
+    }
+    this.fx.banner(this.player.x, this.player.y - 60, 'COVER RISES — USE THE PILLARS', pc);
     const a = rand(0, TAU);
     const b = new Boss(def.id, this.player.x + Math.cos(a) * 150, this.player.y + Math.sin(a) * 150,
       this.realmId, this.difficulty, this.art);
@@ -1228,6 +1413,15 @@ export class GameplayScene {
       }
     }
 
+    // ---- NEW WEAPON overlay owns the frame (three named choices) ----
+    if (this.wPick) {
+      this.wPick.t += rawDt;
+      this._updateWPick();
+      this.fx.update(rawDt * 0.25);
+      input.endFrame();
+      return;
+    }
+
     // ---- ROUTE CARD overlay owns the frame (exact rewards, your pick) ----
     if (this.routeCards) {
       this.routeCards.t += rawDt;
@@ -1273,6 +1467,8 @@ export class GameplayScene {
     this._updateFurnace();
     this._updateHazards(dt);
     this._updateBossRule();
+    this._updateMusic(rawDt);
+    this._updateTouchButtons();
     // MEDICAL CAR: the medical car pulses a slow heal when you stay close
     if ((this.train.carriageLoadout || []).includes('medical') && !this.train.dead) {
       if (dist(this.player.x, this.player.y, this.train.x, this.train.y) < 70) {
@@ -1583,6 +1779,22 @@ export class GameplayScene {
     this.save.stats.longestRun = Math.max(this.save.stats.longestRun || 0, this.runTime);
     this.save.stats.highestStage = Math.max(this.save.stats.highestStage || 0, this.stage);
     this.save.stats.bestCombo = Math.max(this.save.stats.bestCombo || 0, this.runStats.bestCombo);
+    // OFFLINE-FIRST RECORDS: this device remembers your best runs, weeks, days
+    try {
+      recordLocalScore(this.save, {
+        score: p.score || 0, time: Math.round(this.runTime), stage: this.stage,
+        realm: this.realmId, kills: this.runStats.kills, at: Date.now(),
+      });
+      if (this.weeklyChallenge) {
+        const wk = Math.floor((Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()) / 86400000) / 7);
+        this.save.weeklyBest = this.save.weeklyBest || {};
+        this.save.weeklyBest[wk] = Math.max(this.save.weeklyBest[wk] || 0, p.score || 0);
+      }
+      if (this.dailySeed) {
+        this.save.dailyBest = this.save.dailyBest || {};
+        this.save.dailyBest[String(this.dailySeed)] = Math.max(this.save.dailyBest[String(this.dailySeed)] || 0, p.score || 0);
+      }
+    } catch {}
     saveSave(this.save);
     this.engine.supabase?.submitScore?.({
       score: p.score, time: this.runTime, stage: this.stage, realm: this.realmId,
@@ -1726,6 +1938,31 @@ export class GameplayScene {
       this._light(w.x, w.y, 40, w.color, 0.7, 0.2);
     }
 
+    // ---- boss-arena cover pillars (themed) ----
+    for (const pl of this.pillars) {
+      pl.t += 0.016;
+      const rise = Math.min(1, pl.t * 1.4);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#0a0612';
+      ctx.beginPath(); ctx.ellipse(pl.x, pl.y + 6, pl.r + 2, (pl.r + 2) * 0.5, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = pl.color;
+      ctx.globalAlpha = 0.9;
+      ctx.fillRect(pl.x - pl.r, pl.y - 14 * rise, pl.r * 2, 14 * rise);
+      ctx.fillStyle = '#ffffff55';
+      ctx.fillRect(pl.x - pl.r, pl.y - 14 * rise, pl.r * 2, 2);
+      ctx.globalAlpha = 1;
+      this._light(pl.x, pl.y - 6, 26, pl.color, 0.35);
+    }
+    // ---- boss ATTACK TELL: the signature flashes before it lands ----
+    if (this.boss?.alive && this.boss._tell) {
+      const k = 1 - this.boss._tell.t / 0.55;
+      ctx.globalAlpha = 0.5 + 0.5 * Math.sin(this.runTime * 20);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(this.boss.x, this.boss.y, this.boss.radius + 16 + k * 6, 0, TAU); ctx.stroke();
+      ctx.globalAlpha = 1;
+      textC(ctx, '!', this.boss.x, this.boss.y - this.boss.radius - 26, '#ffffff', 12, true);
+    }
     // ---- challenge door — the reward is printed right on it ----
     if (this.door) {
       const d = this.door;
@@ -1902,6 +2139,7 @@ export class GameplayScene {
     this._drawHUD(out);
     if (this.cards) this._drawCards(out);
     if (this.routeCards) this._drawRouteCards(out);
+    if (this.wPick) this._drawWPick(out);
 
     // ---- STOP CARD: each new sector announces itself with story ----
     if (this.stopCard > 0 && !this.cards) {
@@ -2520,6 +2758,14 @@ export class GameplayScene {
         textC(ctx, 'CHALLENGE: ' + (c.type === 'survive' ? 'SURVIVE ' : c.type === 'elites' ? 'SLAY ELITES ' : 'BREAK CORE ') + prog
           + ' — +' + c.reward + ' COINS', W / 2, ty, '#ffe066', 6, true);
       }
+      // THE GAUNTLET: lieutenant health bar, top center
+      if (this.lieutenant?.alive) {
+        const e = this.lieutenant;
+        const bw = 120;
+        ctx.fillStyle = '#000000aa'; ctx.fillRect(W / 2 - bw / 2 - 1, ty + 1, bw + 2, 7);
+        ctx.fillStyle = '#ff4d6a'; ctx.fillRect(W / 2 - bw / 2, ty + 2, bw * Math.max(0, e.hp / e.maxHp), 5);
+        textC(ctx, 'THE LIEUTENANT', W / 2, ty - 1, '#ff4d6a', 6, true);
+      }
     }
     // kills — icon + number, less text-litter
     ctx.fillStyle = '#ff7a6a';
@@ -2749,6 +2995,45 @@ export class GameplayScene {
       drawPanel(ctx, W / 2 + 10, by, 80, 16, bc);
       textC(ctx, 'BANISH (B) ' + this.banishes, W / 2 + 50, by + 11, bc, 7, true);
     }
+  }
+
+  _drawWPick(ctx) {
+    const W = CFG.VIEW_W, H = CFG.VIEW_H;
+    ctx.fillStyle = 'rgba(6,4,14,0.88)';
+    ctx.fillRect(0, 0, W, H);
+    const t = Math.min(1, this.wPick.t * 3.4);
+    textC(ctx, 'A NEW WEAPON JOINS THE CREW', W / 2, 46, '#ffe066', 12, true);
+    textC(ctx, 'pick one — exact stats shown', W / 2, 60, '#cfd4e0', 7);
+    const geo = this._wpickGeometry();
+    for (let i = 0; i < this.wPick.opts.length; i++) {
+      const w = this.wPick.opts[i];
+      const g = geo[i];
+      const y = g.y + (1 - t) * 24 * (i % 2 ? 1 : -1);
+      const sel = this.wPick.idx === i;
+      ctx.globalAlpha = t;
+      ctx.fillStyle = sel ? '#1c1626' : '#120e1c';
+      ctx.fillRect(g.x, y, g.w, g.h);
+      ctx.strokeStyle = sel ? w.color : '#3a3450';
+      ctx.lineWidth = sel ? 2 : 1;
+      ctx.strokeRect(g.x + 0.5, y + 0.5, g.w - 1, g.h - 1);
+      if (sel) {
+        ctx.globalAlpha = t * 0.22 + 0.1 * Math.sin(this.runTime * 8);
+        ctx.fillStyle = w.color;
+        ctx.fillRect(g.x, y, g.w, g.h);
+        ctx.globalAlpha = t;
+      }
+      drawIcon(ctx, w.icon || 'star', g.x + g.w / 2 - 8, y + 8, 16, w.color);
+      textC(ctx, w.name.toUpperCase(), g.x + g.w / 2, y + 34, w.color, 7, true);
+      textC(ctx, 'DMG ' + Math.round(w.dmg) + ' · ' + (w.cd || 1).toFixed(1) + 's', g.x + g.w / 2, y + 46, '#cfd4e0', 6);
+      let ly = y + 60;
+      for (const seg of wrap6(ctx, w.desc, g.w - 12)) {
+        textC(ctx, seg, g.x + g.w / 2, ly, '#e8e2f0', 6);
+        ly += 9;
+      }
+      textC(ctx, '[' + (i + 1) + ']', g.x + g.w / 2, y + g.h - 6, '#6a647c', 6);
+      ctx.globalAlpha = 1;
+    }
+    textC(ctx, 'CLICK A CARD  ·  OR PRESS 1 / 2 / 3', W / 2, H - 22, '#8a8a9c', 6);
   }
 
   // ================================================================

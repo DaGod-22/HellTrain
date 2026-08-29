@@ -110,8 +110,8 @@ export class CoinShopScene {
       ctx.fillStyle = `rgba(192,122,255,${(0.10 + e.s * 0.14).toFixed(2)})`;
       ctx.fillRect(e.x | 0, e.y | 0, 1, 1);
     }
-    topBar(ctx, { title: 'COIN SHOP', save: this.save, hover: null });
-    label(ctx, 'Permanent ranks. Prices never change, effects stack.', KW / 2, 40, K.SUB, 6);
+    topBar(ctx, { title: 'THE COIN WORKS', save: this.save, hover: null });
+    label(ctx, 'COINS only — permanent rank upgrades. Shards shop at the Forge.', KW / 2, 40, K.SUB, 6);
     drawTabs(ctx, [{ id: 0, label: 'CONDUCTOR' }, { id: 1, label: 'TRAIN' }], this.tab, 50);
     const items = this.items();
     const [a, b] = this.list.visibleRange();
