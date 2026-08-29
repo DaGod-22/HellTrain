@@ -5,20 +5,32 @@
 import { TAU } from '../core/utils.js';
 
 export const FONT_FAMILY = 'monospace';
+// v1.8 — match the kit typography scale (kit.js not imported to avoid a cycle)
+export const TEXT_SCALE = 1.4;
 
 export function text(ctx, str, x, y, color = '#ffffff', size = 8, bold = false, shadow = true) {
+  size = Math.round(size * TEXT_SCALE);
   ctx.font = (bold ? 'bold ' : '') + size + 'px ' + FONT_FAMILY;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
-  if (shadow) { ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillText(str, x + 1, y + 1); }
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = Math.max(2.5, size * 0.22);
+  ctx.strokeText(str, x, y);
+  ctx.lineWidth = 1;
   ctx.fillStyle = color;
   ctx.fillText(str, x, y);
 }
 
 export function textC(ctx, str, cx, y, color = '#ffffff', size = 8, bold = false, shadow = true) {
+  size = Math.round(size * TEXT_SCALE);
   ctx.font = (bold ? 'bold ' : '') + size + 'px ' + FONT_FAMILY;
   ctx.textAlign = 'center';
-  if (shadow) { ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillText(str, cx + 1, y + 1); }
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = Math.max(2.5, size * 0.22);
+  ctx.strokeText(str, cx, y);
+  ctx.lineWidth = 1;
   ctx.fillStyle = color;
   ctx.fillText(str, cx, y);
   ctx.textAlign = 'left';
@@ -34,6 +46,7 @@ export function textR(ctx, str, x, y, color = '#ffffff', size = 8, bold = false)
 
 // Word-wrap into an array of lines that fit `w` pixels.
 export function wrap(ctx, str, w, size = 6) {
+  size = Math.round(size * TEXT_SCALE);
   ctx.font = size + 'px ' + FONT_FAMILY;
   const words = String(str).split(/\s+/);
   const lines = [];
@@ -230,4 +243,30 @@ export function hexA(hex, a) {
 // A simple hover/click button used across menus.
 export function hitRect(mx, my, x, y, w, h) {
   return mx >= x && mx <= x + w && my >= y && my <= y + h;
+}
+
+// v1.8: wrap + AUTO-SIZE a description so it fills its area without clipping.
+export function fitTextBlock(ctx, str, maxW, maxH, baseSize, minSize = 5) {
+  str = String(str);
+  const wrapAt = (size) => {
+    ctx.font = 'bold ' + size + 'px ' + FONT_FAMILY;
+    const words = str.split(/\s+/);
+    const lines = [];
+    let cur = '';
+    for (const wd of words) {
+      const test = cur ? cur + ' ' + wd : wd;
+      if (ctx.measureText(test).width <= maxW || !cur) cur = test;
+      else { lines.push(cur); cur = wd; }
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  };
+  let size = Math.round(baseSize * TEXT_SCALE);
+  const floor = Math.round(minSize * TEXT_SCALE);
+  let lines = wrapAt(size);
+  while (size > floor && lines.length * (size * 1.18) > maxH) {
+    size -= 1;
+    lines = wrapAt(size);
+  }
+  return { size, lines, lineH: Math.ceil(size * 1.18) };
 }

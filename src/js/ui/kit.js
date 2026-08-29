@@ -13,15 +13,24 @@ export const KW = 270, KH = 480;
 
 // ---- one palette for every page ----
 export const K = {
-  INK: '#241318',
-  PANEL: '#2b2230', PANEL_HI: '#3d3242', PANEL_LO: '#1d1622', PANEL_ACT: '#463252',
-  GOLD: '#ffc63c', GOLD_D: '#b06a12',
-  RED: '#e8352a', RED_D: '#7a1420',
-  GREEN: '#4ec53c', GREEN_D: '#2a6a1a',
-  BLUE: '#8ef0ff', LAV: '#c07aff', ORANGE: '#ff9033',
-  TXT: '#ffffff', SUB: '#cfc0dc', DIM: '#93839f', FAINT: '#655870',
-  OK: '#8ef07a', BAD: '#ff7a6a',
+  // HARMONIZED MASTER PALETTE — matte obsidian, iron charcoal,
+  // volcanic crimson, plasma blue, high-visibility cyan for vital data.
+  INK: '#0b0a0e',
+  PANEL: '#232028', PANEL_HI: '#332f3a', PANEL_LO: '#16141a', PANEL_ACT: '#3a2a34',
+  GOLD: '#f2c14e', GOLD_D: '#a06a14',
+  RED: '#ff3b46', RED_D: '#7a0f18',
+  CRIM: '#ff3b46', CRIM_D: '#d5202e',
+  PLASMA: '#4d7dff', PLASMA_D: '#22409c',
+  CYAN: '#28f0e0', CYAN_D: '#0f7a72',
+  GREEN: '#3ee08a', GREEN_D: '#177a48',
+  BLUE: '#8ef0ff', LAV: '#c07aff', ORANGE: '#ff5a3c',
+  TXT: '#ffffff', SUB: '#d8d4e0', DIM: '#9a94a6', FAINT: '#655e70',
+  OK: '#3ee08a', BAD: '#ff5a64',
 };
+// v1.8 TYPOGRAPHY ARCHITECTURE — every string in the game rides this
+// scale. 1.4x baseline: readable from across the room, no exceptions.
+export const TEXT_SCALE = 1.4;
+const _BACK = 'rgba(6,5,10,0.5)';
 
 export function roundPath(ctx, x, y, w, h, r) {
   const rr = Math.max(0, Math.min(r, w / 2, h / 2));
@@ -63,21 +72,46 @@ export function tile(ctx, x, y, w, h, r, o = {}) {
   ctx.lineWidth = 1;
 }
 
-export function label(ctx, str, x, y, color, size, align = 'center') {
+export function label(ctx, str, x, y, color, size, align = 'center', opts = {}) {
+  size = size * TEXT_SCALE;
+  str = String(str);
   ctx.font = 'bold ' + size + 'px monospace';
   ctx.textAlign = align;
-  ctx.fillStyle = 'rgba(20,8,12,0.75)';
-  ctx.fillText(str, x + 1, y + 1);
+  // TEXT-LAYER ISOLATION: every string sits on its own dark backing card
+  if (opts.backing !== false) {
+    const w = ctx.measureText(str).width + 4;
+    const bx = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x;
+    roundPath(ctx, bx - 2, y - size + 2, w + 4, size + 5, 3);
+    ctx.fillStyle = _BACK; ctx.fill();
+  }
+  // crisp 2px solid black outer outline
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 3;
+  ctx.strokeText(str, x, y);
+  ctx.lineWidth = 1;
   ctx.fillStyle = color;
   ctx.fillText(str, x, y);
   ctx.textAlign = 'left';
 }
 
 export function outlineText(ctx, str, cx, y, color, ink, size) {
+  size = size * TEXT_SCALE;
+  str = String(str);
   ctx.font = 'bold ' + size + 'px monospace';
   ctx.textAlign = 'center';
+  // backing card
+  const w = ctx.measureText(str).width + 6;
+  roundPath(ctx, cx - w / 2 - 2, y - size + 2, w + 4, size + 6, 4);
+  ctx.fillStyle = _BACK; ctx.fill();
+  // crisp 2px black outer outline (stroke pass) + ink rim
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = Math.max(3, size * 0.22);
+  ctx.strokeText(str, cx, y);
+  ctx.lineWidth = 1;
   ctx.fillStyle = ink;
-  const k = size > 15 ? 2 : 1;
+  const k = size > 21 ? 2 : 1;
   for (let dx = -k; dx <= k; dx++) for (let dy = -k; dy <= k; dy++) if (dx || dy) ctx.fillText(str, cx + dx, y + dy);
   ctx.fillText(str, cx, y + k + 1);
   ctx.fillStyle = color;
@@ -87,6 +121,7 @@ export function outlineText(ctx, str, cx, y, color, ink, size) {
 
 // Truncate with an ellipsis so long names never overflow their card.
 export function fitText(ctx, str, w, size, bold = true) {
+  size = size * TEXT_SCALE;
   ctx.font = (bold ? 'bold ' : '') + size + 'px monospace';
   let s = String(str);
   if (ctx.measureText(s).width <= w) return s;
@@ -665,4 +700,83 @@ export function drawFrame(ctx, cx, cy, r, frameId) {
       ctx.fill();
     }
   }
+}
+
+// v1.8: wrap a description and AUTO-SIZE it so the block fills the given
+// area edge to edge — never clipped, never shrunk into unreadability.
+export function fitTextBlock(ctx, str, maxW, maxH, baseSize, minSize = 5) {
+  str = String(str);
+  const wrap = (size) => {
+    ctx.font = 'bold ' + size + 'px monospace';
+    const words = str.split(/\s+/);
+    const lines = [];
+    let cur = '';
+    for (const wd of words) {
+      const test = cur ? cur + ' ' + wd : wd;
+      if (ctx.measureText(test).width <= maxW || !cur) cur = test;
+      else { lines.push(cur); cur = wd; }
+    }
+    if (cur) lines.push(cur);
+    return lines;
+  };
+  let size = Math.round(baseSize * TEXT_SCALE);
+  const floor = Math.round(minSize * TEXT_SCALE);
+  let lines = wrap(size);
+  while (size > floor && lines.length * (size * 1.18) > maxH) {
+    size -= 1;
+    lines = wrap(size);
+  }
+  return { size, lines, lineH: Math.ceil(size * 1.18) };
+}
+
+// ============================================================
+// RIVETED STEEL SYSTEM (v1.8 metallic terminal)
+// ============================================================
+export function rivet(ctx, x, y, r = 1.7) {
+  ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fillStyle = '#1a171d'; ctx.fill();
+  ctx.beginPath(); ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.55, 0, TAU); ctx.fillStyle = '#8b8592'; ctx.fill();
+}
+export function steelPlate(ctx, x, y, w, h, opts = {}) {
+  const tone = opts.tone || 0;
+  const top = tone === 2 ? '#4a4550' : tone === 1 ? '#3a3640' : '#332f3a';
+  const mid = tone === 2 ? '#37333e' : tone === 1 ? '#2b2832' : '#26222c';
+  const bot = tone === 2 ? '#211e28' : tone === 1 ? '#1b1820' : '#171419';
+  const rad = opts.r ?? 8;
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, top); g.addColorStop(0.5, mid); g.addColorStop(1, bot);
+  roundPath(ctx, x, y, w, h, rad);
+  ctx.fillStyle = g; ctx.fill();
+  // brushed obsidian streaking
+  ctx.strokeStyle = 'rgba(255,255,255,0.035)';
+  ctx.lineWidth = 1;
+  const stripes = Math.max(2, Math.floor(h / 9));
+  for (let i = 1; i < stripes; i++) {
+    const sy = y + (h * i) / stripes;
+    ctx.beginPath(); ctx.moveTo(x + 3, sy); ctx.lineTo(x + w - 3, sy); ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(210,200,220,0.16)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x + 4, y + 0.5); ctx.lineTo(x + w - 4, y + 0.5); ctx.stroke();
+  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
+  ctx.beginPath(); ctx.moveTo(x + 4, y + h - 0.5); ctx.lineTo(x + w - 4, y + h - 0.5); ctx.stroke();
+  ctx.strokeStyle = '#0c0a0e'; ctx.lineWidth = 1.5;
+  roundPath(ctx, x, y, w, h, rad); ctx.stroke();
+  const n = Math.max(2, Math.floor((w * h) / 2600));
+  for (let i = 0; i < n; i++) {
+    const rx = x + 6 + ((i * 53) % Math.max(1, w - 12));
+    const ry = y + 6 + ((i * 97 + 31) % Math.max(1, h - 12));
+    ctx.fillStyle = `rgba(150,68,26,${(0.05 + ((i * 7) % 5) * 0.012).toFixed(3)})`;
+    ctx.beginPath(); ctx.arc(rx, ry, 2 + (i % 3), 0, TAU); ctx.fill();
+  }
+  rivet(ctx, x + 5, y + 5); rivet(ctx, x + w - 5, y + 5);
+  rivet(ctx, x + 5, y + h - 5); rivet(ctx, x + w - 5, y + h - 5);
+  if (w > 100) { rivet(ctx, x + w / 2, y + 5); rivet(ctx, x + w / 2, y + h - 5); }
+  if (w > 200) {
+    rivet(ctx, x + w * 0.25, y + 5); rivet(ctx, x + w * 0.75, y + 5);
+    rivet(ctx, x + w * 0.25, y + h - 5); rivet(ctx, x + w * 0.75, y + h - 5);
+  }
+}
+export function steelButton(ctx, x, y, w, h, opts = {}) {
+  steelPlate(ctx, x, y, w, h, { tone: opts.tone ?? 1, r: opts.r ?? 7 });
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fillRect(x + 3, y + 2, Math.max(0, w - 6), 1.5);
 }

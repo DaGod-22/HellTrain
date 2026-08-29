@@ -15,12 +15,34 @@ import { TRAIN_CARRIAGE_MODULES } from '../data/carriages.js';
 import { familyName, masteryLabel, nextMilestone } from '../data/mastery.js';
 import { SEASON_TIERS, tierForRank, monthKey, monthLabel, AVATARS, FRAMES } from '../data/season.js';
 import { drawAvatar, drawFrame } from './kit.js';
+
+// v1.8 metallic terminal backdrop — charcoal smoke + crimson wash (menu pages)
+function steelBackdrop(ctx, t, embers = []) {
+  const g = ctx.createLinearGradient(0, 0, 0, KH);
+  g.addColorStop(0, '#100f14');
+  g.addColorStop(0.5, '#1a1720');
+  g.addColorStop(1, '#231f28');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, KW, KH);
+  for (let i = 0; i < 3; i++) {
+    const y0 = 90 + i * 150;
+    ctx.beginPath(); ctx.moveTo(-10, y0);
+    for (let x = -10; x <= KW + 10; x += 16) ctx.lineTo(x, y0 + Math.sin(x * 0.03 + t * (0.14 + i * 0.05) + i * 2) * 9);
+    ctx.lineTo(KW + 10, y0 + 60);
+    ctx.fillStyle = 'rgba(120,110,140,0.04)';
+    ctx.fill();
+  }
+  for (const e of embers) {
+    ctx.fillStyle = `rgba(255,${50 + Math.floor(e.s * 40)},44,${(0.1 + e.s * 0.22).toFixed(2)})`;
+    ctx.fillRect(e.x | 0, ((e.y - t * (10 + e.s * 14)) % KH + KH) % KH | 0, e.w || 1, e.w || 1);
+  }
+}
 import { saveSave, spendCoins } from '../core/save.js';
 import { AUTH } from '../systems/auth.js';
 import { SOUNDS } from '../core/sound.js';
 import {
   KW, KH, K, tile, label, outlineText, glyph, roundPath, inRect,
   topBar, itemCard, drawTabs, button, List, drawToast, sectionLabel,
+  steelPlate, steelButton, rivet,
 } from './kit.js';
 
 // ---- shared molten backdrop (the game's face, kept calm so cards read) ----
@@ -1215,34 +1237,88 @@ function fit(s, n) {
 // PAUSE
 // ====================================================================
 export class PauseScene extends Page {
-  enter(p) { super.enter(p); this.ctx2 = p.ctx; this.tab = 0; }
+  enter(p) { super.enter(p); this.ctx2 = p.ctx; this.tab = 0; this.post = null; }
+  _gp() { return this.ctx2?.gameplay; }
   _goBack() { if (this.ctx2?.gameplay) this.engine.resumeScene(this.ctx2.gameplay); else this.engine.setScene('menu', { save: this.save }); }
+  _postLabel() {
+    const st = this.post?.state;
+    if (st === 'posting') return 'POSTING\u2026';
+    if (st === 'done') return this.post.rank ? ('POSTED \u2014 RANK #' + this.post.rank) : 'POSTED TO THE BOARD';
+    if (st === 'kept') return 'ON THE BOARD \u2014 RANK #' + (this.post.rank || '?');
+    if (st === 'error') return 'COULD NOT POST \u2014 TAP TO RETRY';
+    return 'SAVE SCORE TO LEADERBOARD';
+  }
   _buttons() {
-    const w = 150, x = KW / 2 - w / 2;
-    if (this.tab === 1) return [
-      { label: 'BACK TO PAUSE', y: 234, x, w, h: 34, act: 'resume', color: K.BLUE },
-    ];
+    const w = 172, x = KW / 2 - w / 2;
+    if (this.tab === 1 || this.tab === 2) return [{ label: 'BACK TO PAUSE', y: 300, x, w, h: 30, act: 'resume', color: K.PLASMA }];
     return [
-      { label: 'RESUME', y: 150, x, w, h: 34, act: 'resume', color: K.GREEN },
-      { label: 'YOUR BUILD', y: 192, x, w, h: 34, act: 'build', color: K.PURPLE || '#c07aff' },
-      { label: 'SETTINGS', y: 234, x, w, h: 34, act: 'settings', color: K.BLUE },
+      { label: 'RESUME THE RUN', y: 178, act: 'resume', color: K.GREEN },
+      { label: 'YOUR BUILD', y: 212, act: 'build', color: K.LAV },
+      { label: 'RUN SCORE', y: 246, act: 'score', color: K.CYAN },
+      { label: 'SETTINGS', y: 280, act: 'settings', color: K.PLASMA },
+      { label: this._postLabel(), y: 314, act: 'post', color: (this.post?.state === 'done' || this.post?.state === 'kept') ? K.GREEN : K.GOLD },
+      { label: 'END RUN \u2014 SAVE & EXIT', y: 348, act: 'exit', color: K.RED },
     ];
   }
   _buildLines() {
-    const g = this.ctx2?.gameplay;
+    const g = this._gp();
     if (!g?.player) return [];
     const lines = [];
     for (const w of g.player.weapons) {
       const st = g.player.weaponStates[w.id] || { level: 1 };
-      lines.push({ l: `${w.name.toUpperCase()} — L${st.level}${w.evolved ? ' ★EVOLVED' : ''}`, c: w.color });
+      lines.push({ l: `${w.name.toUpperCase()} \u2014 L${st.level}${w.evolved ? ' \u2605EVOLVED' : ''}`, c: w.color });
     }
     const owned = Object.entries(g.owned || {});
-    if (owned.length) lines.push({ l: '— CARDS —', c: K.DIM });
-    for (const [id, lvl] of owned.slice(0, 8)) {
+    if (owned.length) lines.push({ l: '\u2014 ASCENSION CARDS \u2014', c: K.DIM });
+    for (const [id, lvl] of owned.slice(0, 10)) {
       lines.push({ l: `${id.replace(/_/g, ' ').toUpperCase()} ${lvl > 1 ? 'x' + lvl : ''}`, c: K.SUB });
     }
-    lines.push({ l: `REROLLS ${g.rerolls ?? 0} · BANISHES ${g.banishes ?? 0} · KILLS ${g.runStats?.kills ?? 0}`, c: K.GOLD });
+    lines.push({ l: `REROLLS ${g.rerolls ?? 0} \u00b7 BANISHES ${g.banishes ?? 0} \u00b7 KILLS ${g.runStats?.kills ?? 0}`, c: K.GOLD });
     return lines;
+  }
+  _scoreLines() {
+    const g = this._gp();
+    if (!g) return [];
+    const p = g.player;
+    return [
+      ['SCORE', fmtNum(Math.round(p?.score || 0))],
+      ['KILLS', fmtNum(g.runStats?.kills || 0)],
+      ['SECTOR', g.stage + ' \u2014 ' + (g.theme?.name || '').toUpperCase()],
+      ['TIME', fmtTime(g.runTime || 0)],
+      ['LEVEL', String(p?.level || 1)],
+      ['BEST COMBO', 'x' + (g.runStats?.bestCombo || 0)],
+      ['SHARDS THIS RUN', String(g.gameStats?.shards || 0)],
+      ['COINS THIS RUN', fmtNum(g.runStats?.coins || 0)],
+    ];
+  }
+  _doPost() {
+    if (this.post && ['posting', 'done', 'kept'].includes(this.post.state)) return;
+    const u = AUTH.getCurrentUser();
+    if (!u) { this.say('SIGN IN AT THE PROFILE DESK TO POST', K.BAD); return; }
+    const g = this._gp();
+    if (!g) return;
+    const sb = this.engine.supabase;
+    if (!sb?.isAvailable?.()) { this.post = { state: 'error' }; this.say('THE GLOBAL BOARD NEEDS THE NETWORK', K.BAD); return; }
+    this.post = { state: 'posting' };
+    const entry = {
+      playerId: this.save.playerId, name: u.username || 'CONDUCTOR',
+      score: Math.round(g.player?.score || 0), stage: g.stage,
+      kills: g.runStats?.kills || 0, realm: g.realmId,
+      difficulty: g.difficulty?.id || 'normal',
+    };
+    sb.submitRun(entry).then(() => sb.topBoard(entry.realm, entry.difficulty)).then((rows) => {
+      const rank = rows && rows.length ? rows.findIndex(r => r.player_id === this.save.playerId) + 1 : null;
+      const key = [entry.realm, entry.difficulty, monthKey()].join('|');
+      this.save.myBoards = this.save.myBoards || {};
+      this.save.myBoards[key] = rank || 999;
+      saveSave(this.save);
+      this.post = { state: 'done', rank: rank || null };
+    }).catch(() => { this.post = { state: 'error' }; });
+  }
+  _endRun() {
+    const g = this._gp();
+    if (g && !g._ended) g._endRun(false, { cause: 'CALLED IT A DAY AT THE PAUSE SIGNAL' });
+    else this.engine.setScene('runSummary', { save: this.save, victory: false, cause: 'RUN ENDED' });
   }
   update(dt) {
     const m = super.base(dt);
@@ -1252,15 +1328,10 @@ export class PauseScene extends Page {
         if (this.hit(b)) {
           if (b.act === 'resume') { this.tab = 0; this.engine.resumeScene(this.ctx2.gameplay); }
           else if (b.act === 'build') { this.tab = 1; m.justDown = false; return; }
+          else if (b.act === 'score') { this.tab = 2; m.justDown = false; return; }
           else if (b.act === 'settings') this.engine.setScene('settings', { save: this.save, from: 'pause', ctx: this.ctx2 });
-          else this.engine.setScene('runSummary', {
-            save: this.save, realmId: this.ctx2?.gameplay?.realmId, stage: this.ctx2?.gameplay?.stage,
-            runStats: this.ctx2?.gameplay?.runStats, time: this.ctx2?.gameplay?.runTime,
-            sectorDuration: this.ctx2?.gameplay?.sectorDuration, victory: false,
-            coins: 0, level: this.ctx2?.gameplay?.player?.level, owned: this.ctx2?.gameplay?.owned,
-            dmgByWeapon: this.ctx2?.gameplay?.runStats?.dmgByWeapon, dmgOther: this.ctx2?.gameplay?.runStats?.dmgOther,
-            cause: 'RUN ENDED AT THE PAUSE SIGNAL',
-          });
+          else if (b.act === 'post') this._doPost();
+          else if (b.act === 'exit') this._endRun();
           m.justDown = false;
           return;
         }
@@ -1270,30 +1341,35 @@ export class PauseScene extends Page {
     m.justDown = false;
   }
   render(ctx) {
-    lavaBackground(ctx, this.t, this.embers);
-    tile(ctx, KW / 2 - 90, 100, 180, 200, 14, { fill: '#20182c', fillLo: '#140e1e', outline: K.INK, ring: K.GOLD, ringW: 2, lift: 5 });
+    steelBackdrop(ctx, this.t, this.embers);
+    steelPlate(ctx, KW / 2 - 98, 36, 196, 414, { r: 12 });
+    label(ctx, 'SIGNAL PAUSED', KW / 2, 62, '#ffece6', 12);
+    label(ctx, "the void waits \u00b7 the schedule doesn't", KW / 2, 80, K.DIM, 6);
     if (this.tab === 1) {
-      outlineText(ctx, 'YOUR BUILD', KW / 2, 126, '#ffffff', '#5a1a08', 14);
+      label(ctx, 'YOUR BUILD', KW / 2, 106, K.LAV, 9);
       const lines = this._buildLines();
-      if (!lines.length) label(ctx, 'No build yet — go make one.', KW / 2, 170, K.DIM, 7);
-      lines.slice(0, 9).forEach((ln, i) => {
-        label(ctx, ln.l, KW / 2, 150 + i * 15, ln.c, 6);
+      if (!lines.length) label(ctx, 'No build yet \u2014 go make one.', KW / 2, 150, K.DIM, 7);
+      lines.slice(0, 13).forEach((ln, i) => {
+        label(ctx, ln.l, KW / 2, 126 + i * 13, ln.c, 6);
       });
-    } else {
-      outlineText(ctx, 'PAUSED', KW / 2, 130, '#ffffff', '#5a1a08', 16);
-      label(ctx, 'The void waits. The schedule doesn\'t.', KW / 2, 148, K.SUB, 6);
+    } else if (this.tab === 2) {
+      label(ctx, 'RUN SCORE', KW / 2, 106, K.CYAN, 9);
+      this._scoreLines().forEach(([k2, v], i) => {
+        const y = 130 + i * 19;
+        label(ctx, k2, 22, y, K.DIM, 6, 'left');
+        label(ctx, v, KW - 22, y, i === 0 ? K.CYAN : K.TXT, i === 0 ? 9 : 7, 'right');
+      });
+      label(ctx, 'posting is always your choice \u2014 never automatic', KW / 2, 292, K.DIM, 5);
     }
     for (const b of this._buttons()) {
+      if (this.tab !== 0 && b.act === 'resume' && b.y === 178) continue;
       const hov = this.hit(b);
-      button(ctx, b, b.label, { color: b.color, hover: hov, size: 9 });
+      button(ctx, b, b.label, { color: b.color, hover: hov, size: 7 });
     }
     drawToast(ctx, this.toast);
   }
 }
 
-// ====================================================================
-// PROFILE — account + lifetime record
-// ====================================================================
 export class ProfileScene extends Page {
   enter(p) {
     super.enter(p);
@@ -1574,3 +1650,136 @@ export class IdentityScene extends Page {
     drawToast(ctx, this.toast);
   }
 }
+
+// ====================================================================
+// TUTORIAL — every mechanic, taught once, skipped anytime
+// ====================================================================
+const TUTORIAL_STEPS = [
+  {
+    t: 'WELCOME ABOARD', icon: 'train', col: '#ff3b46',
+    b: 'This is the HELL TRAIN line. You are the Conductor. The sectors are overrun, and the only way out is THROUGH. 6 quick pages and you will know everything.',
+    tip: 'tap NEXT to continue \u00b7 SKIP anytime',
+  },
+  {
+    t: 'MOVING & FIGHTING', icon: 'target', col: '#28f0e0',
+    b: 'MOVE with WASD / arrows, or drag anywhere on touch. Your weapons FIRE AUTOMATICALLY at the nearest horror. Your only job is positioning \u2014 never stop moving.',
+    tip: 'damage numbers burst off every hit',
+  },
+  {
+    t: 'XP & ASCENSION', icon: 'star', col: '#f2c14e',
+    b: 'Slain horrors drop glowing XP gems. Collect them to LEVEL UP. Each level opens ASCENSION: pick one of three upgrade cards. Exact effects are printed on every card \u2014 no guessing, no rolls.',
+    tip: 'press 1 / 2 / 3 or tap a card',
+  },
+  {
+    t: 'WEAPONS & EVOLUTION', icon: 'blade', col: '#c07aff',
+    b: 'You carry several weapons at once. Level a weapon to 5 and it EVOLVES into its final form. REROLL (R) swaps the offered cards; BANISH (B) removes one for the whole run.',
+    tip: 'your build lives in the pause signal',
+  },
+  {
+    t: 'THE TRAIN', icon: 'train', col: '#8ef0ff',
+    b: 'The armored train rides beside you. Kill CLOSE to it and the FURNACE heats twice as fast. At full furnace, press E for a burst that scorches everything near the rails. The train falls \u2192 you are alone.',
+    tip: 'the train is a teammate, not scenery',
+  },
+  {
+    t: 'THE ULTIMATE', icon: 'bolt', col: '#28f0e0',
+    b: 'The train charges energy over time. When the Q \u2014 ULTIMATE READY lamp blinks, press Q (or tap the fire ring) to unleash the train\'s ultimate. It never fires itself \u2014 that moment is YOURS.',
+    tip: 'a run can turn on one well-timed Q',
+  },
+  {
+    t: 'SHARDS \u2014 HARD CURRENCY', icon: 'shard', col: '#8ef0ff',
+    b: 'ELITES drop exactly +12\u25c6, CHESTS +8\u25c6, LIEUTENANTS +40\u25c6, BOSSES +60\u25c6 \u2014 always printed, always exact. Shards you grab in a run are BANKED at the end. Shards buy permanent upgrades at the FORGE.',
+    tip: 'achievements pay shard bounties too',
+  },
+  {
+    t: 'COINS \u2014 SOFT CURRENCY', icon: 'coin', col: '#f2c14e',
+    b: 'Coins rain from every kill and daily goal. Coins buy consumables and rank-ups in the SHOP. Daily goals pay 60+ coins per streak day \u2014 clear BOTH goals for a bonus of +2\u25c6.',
+    tip: 'streaks raise the payout, cap 180',
+  },
+  {
+    t: 'SECTORS & BOSSES', icon: 'map', col: '#4d7dff',
+    b: 'Each run crosses sectors. Every 2 minutes the sector ends and you pick a ROUTE CARD. Sector bosses guard the deep line. The FIRST 3 SECTORS are a learning phase \u2014 new dangers arrive one at a time.',
+    tip: 'sector 4+ is the full nightmare',
+  },
+  {
+    t: 'THE LEADERBOARDS', icon: 'trophy', col: '#f2c14e',
+    b: 'Scores NEVER post automatically. At run end you choose: POST or keep it local. Signed-in conductors compete on GLOBAL boards per sector and difficulty. Each MONTH the top 50 earn avatars, frames and currency \u2014 printed in advance.',
+    tip: 'one entry per board \u2014 your best stands',
+  },
+  {
+    t: 'FULL AHEAD', icon: 'fire', col: '#ff3b46',
+    b: 'That is everything. Pull the throttle on the depot platform to start. The first three sectors go easy on you \u2014 after that, the line belongs to the horrors. Good hunting, Conductor.',
+    tip: 're-read this anytime: MENU \u2192 HOW TO PLAY',
+  },
+];
+
+export class TutorialScene extends Page {
+  enter(p) { super.enter(p); this.step = 0; this.save = p.save || this.engine.save; }
+  _finish() {
+    this.save.tutorialDone = true;
+    saveSave(this.save);
+    try { SOUNDS.levelup(); } catch {}
+    this.engine.setScene('menu', { save: this.save });
+  }
+  _next() {
+    this.step += 1;
+    if (this.step >= TUTORIAL_STEPS.length) this._finish();
+    else try { SOUNDS.pickup(); } catch {}
+  }
+  _nextRect() { return { x: KW / 2 - 60, y: 356, w: 120, h: 34 }; }
+  _skipRect() { return { x: KW - 70, y: 10, w: 60, h: 22 }; }
+  _dotRect(i) { return { x: Math.round(KW / 2 - TUTORIAL_STEPS.length * 7 + i * 14), y: 402, w: 12, h: 10 }; }
+  update(dt) {
+    const m = super.base(dt);
+    if (!m) return;
+    if (m.justDown && !this.grace(dt)) {
+      if (this.hit(this._skipRect())) return this._finish();
+      if (this.hit(this._nextRect())) return this._next();
+      for (let i = 0; i < TUTORIAL_STEPS.length; i++) if (this.hit(this._dotRect(i))) { this.step = i; m.justDown = false; return; }
+      if (!this.hit(PANEL_RECT)) this._next();
+    }
+    if (this.input?.wasPressed?.('Enter') || this.input?.wasPressed?.('Space')) this._next();
+    if (this.input?.wasPressed?.('Escape')) this._finish();
+    if (!m.down) this._press = null;
+    m.justDown = false;
+  }
+  render(ctx) {
+    steelBackdrop(ctx, this.t, this.embers);
+    const st = TUTORIAL_STEPS[this.step];
+    steelPlate(ctx, PANEL_RECT.x, PANEL_RECT.y, PANEL_RECT.w, PANEL_RECT.h, { r: 12 });
+    label(ctx, 'CONDUCTOR\'S HANDBOOK', PANEL_RECT.x + 14, PANEL_RECT.y + 20, K.DIM, 6, 'left');
+    label(ctx, 'PAGE ' + (this.step + 1) + '/' + TUTORIAL_STEPS.length, PANEL_RECT.x + PANEL_RECT.w - 14, PANEL_RECT.y + 20, K.DIM, 6, 'right');
+    glyph(ctx, st.icon, KW / 2 - 15, 112, 30, st.col);
+    label(ctx, st.t, KW / 2, 176, st.col, 11);
+    // body text — wrapped, big, backed
+    ctx.font = 'bold ' + Math.round(7 * 1.4) + 'px monospace';
+    const words = st.b.split(/\s+/);
+    const lines = [];
+    let cur = '';
+    for (const wd of words) {
+      const test = cur ? cur + ' ' + wd : wd;
+      if (ctx.measureText(test).width <= PANEL_RECT.w - 36 || !cur) cur = test;
+      else { lines.push(cur); cur = wd; }
+    }
+    if (cur) lines.push(cur);
+    lines.slice(0, 8).forEach((ln, i) => label(ctx, ln, KW / 2, 204 + i * 15, '#efeaf4', 7));
+    label(ctx, st.tip, KW / 2, 336, K.CYAN, 6);
+    // NEXT switch
+    const nr = this._nextRect();
+    steelButton(ctx, nr.x, nr.y, nr.w, nr.h, { tone: 2 });
+    label(ctx, this.step === TUTORIAL_STEPS.length - 1 ? 'TAKE THE THROTTLE' : 'NEXT', nr.x + nr.w / 2, nr.y + 22, '#ffece6', 8);
+    // progress dots
+    for (let i = 0; i < TUTORIAL_STEPS.length; i++) {
+      const r = this._dotRect(i);
+      ctx.beginPath(); ctx.arc(r.x + 5, r.y + 5, i === this.step ? 4 : 2.2, 0, TAU);
+      ctx.fillStyle = i === this.step ? K.CRIM : '#4a4450';
+      if (i < this.step) ctx.fillStyle = '#3ee08a';
+      ctx.fill();
+    }
+    const sr = this._skipRect();
+    steelButton(ctx, sr.x, sr.y, sr.w, sr.h, { tone: 0, r: 5 });
+    label(ctx, 'SKIP \u00bb', sr.x + sr.w / 2, sr.y + 15, K.DIM, 6);
+    drawToast(ctx, this.toast);
+  }
+}
+
+const PANEL_RECT = { x: 22, y: 84, w: 226, h: 340 };

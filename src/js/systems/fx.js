@@ -8,7 +8,9 @@ import { rand, randInt, TAU } from '../core/utils.js';
 import { hexA } from '../core/render.js';
 export { GameCamera as Camera } from '../core/render.js';
 
-const P_SPARK = 0, P_SMOKE = 1, P_EMBER = 2, P_SHARD = 3, P_BLOOD = 4, P_GLOW = 5;
+const P_SPARK = 0, P_SMOKE = 1, P_EMBER = 2, P_SHARD = 3, P_BLOOD = 4, P_GLOW = 5, P_DUSTLINE = 6;
+// screen-space wind — sweeps disintegration debris across the battlefield
+const WIND = () => Math.sin(Date.now() / 1700) * 34 + 14;
 
 export class FXSystem {
   constructor(max = 3000, sprites = null) {
@@ -95,6 +97,33 @@ export class FXSystem {
         additive: false, kind: P_SMOKE });
     }
   }
+  // v1.8 DISINTEGRATION: the defeated fragment into burning neon embers
+  // and charcoal dust lines that the screen-space wind carries away.
+  disintegrate(x, y, color = '#ff7a55', r = 8) {
+    const embers = Math.min(26, 8 + Math.round(r * 0.9));
+    for (let i = 0; i < embers; i++) {
+      const a = rand(0, TAU), sp = rand(26, 130) * (0.7 + r / 18);
+      this.spawn({
+        x: x + rand(-r * 0.5, r * 0.5), y: y + rand(-r * 0.5, r * 0.5),
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - rand(10, 46),
+        color: i % 4 === 0 ? '#ffffff' : i % 2 ? color : '#ff3b46',
+        color2: '#28f0e0',
+        life: rand(0.5, 1.25), size: rand(1.2, 2.6), endSize: 0.4,
+        gravity: -46, drag: 0.955, kind: P_EMBER, light: 0.3, spin: 0,
+      });
+    }
+    for (let i = 0; i < Math.min(14, 5 + Math.round(r * 0.5)); i++) {
+      const a = rand(0, TAU), sp = rand(18, 90);
+      this.spawn({
+        x: x + rand(-r * 0.4, r * 0.4), y: y + rand(-r * 0.4, r * 0.4),
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        color: '#15121a', life: rand(0.4, 0.9), size: rand(2.4, 4.4), endSize: 0.8,
+        drag: 0.9, kind: P_DUSTLINE, additive: false,
+        ang: a, spin: 0,
+      });
+    }
+  }
+
   blood(x, y, color = '#a01f12', n = 8) {
     for (let i = 0; i < n; i++) {
       const a = rand(0, TAU), s = rand(30, 150);
@@ -188,8 +217,10 @@ export class FXSystem {
       }
     }
     if (this.texts.length > 60) this.texts.shift();
+    // impact vector: bursts outward with a directional arc (crit = harder)
+    const str = opts.crit ? 1.7 : 1;
     this.texts.push({
-      x: x + rand(-3, 3), y, vy: opts.vy ?? -46, vx: opts.vx ?? rand(-14, 14),
+      x: x + rand(-3, 3), y, vy: opts.vy ?? rand(-74, -52) * str, vx: opts.vx ?? rand(-34, 34) * str,
       t: opts.life || 0.85, life: opts.life || 0.85, text, color,
       size: opts.size || 8, crit: opts.crit || false, pop: 1, outline: opts.outline ?? true,
       _bk: bx + ':' + by,
@@ -215,6 +246,7 @@ export class FXSystem {
       p.t -= dt;
       if (p.t <= 0) { list.splice(i, 1); continue; }
       p.vy += p.gravity * dt;
+      if (p.kind === P_EMBER || p.kind === P_DUSTLINE) p.vx += WIND() * dt * 2.4;
       const dr = Math.pow(p.drag, dt * 60);
       p.vx *= dr; p.vy *= dr;
       p.x += p.vx * dt; p.y += p.vy * dt;
@@ -416,18 +448,26 @@ export class FXSystem {
 
   // combat text is drawn in screen space for crisp text
   drawTexts(ctx, camera) {
+    // TEXT-LAYER ISOLATION: combat text renders LAST, on its own plane,
+    // each number on a dark backing card with a crisp 2px black outline.
     for (const t of this.texts) {
       const k = t.t / t.life;
       const p = camera ? camera.worldToScreen(t.x, t.y) : { x: t.x, y: t.y };
       const pop = 1 + t.pop * 0.6;
-      const size = Math.round(t.size * pop);
+      const size = Math.round(t.size * 1.4 * pop);
+      if (size < 5) continue;
       ctx.font = `bold ${size}px "Courier New", monospace`;
       ctx.textAlign = 'center';
       ctx.globalAlpha = Math.min(1, k * 2.2);
       if (t.outline) {
-        ctx.fillStyle = '#000000';
-        ctx.fillText(t.text, Math.round(p.x) + 1, Math.round(p.y) + 1);
-        ctx.fillText(t.text, Math.round(p.x) - 1, Math.round(p.y) + 1);
+        const w = ctx.measureText(t.text).width;
+        ctx.fillStyle = 'rgba(6,5,10,0.55)';
+        ctx.fillRect(Math.round(p.x) - w / 2 - 2, Math.round(p.y) - size + 2, w + 4, size + 4);
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = Math.max(2.5, size * 0.24);
+        ctx.strokeText(t.text, Math.round(p.x), Math.round(p.y));
+        ctx.lineWidth = 1;
       }
       ctx.fillStyle = t.color;
       ctx.fillText(t.text, Math.round(p.x), Math.round(p.y));

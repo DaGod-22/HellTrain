@@ -2,7 +2,7 @@
 // HELL TRAIN — global configuration & master pixel-art palette
 // ============================================================
 export const CFG = {
-  VERSION: '1.7.1',
+  VERSION: '1.8.0',
   BUILD: 'god-level-update 2026-08-29',
   VIEW_W: 480,
   VIEW_H: 270,

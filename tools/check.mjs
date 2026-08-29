@@ -396,7 +396,7 @@ try {
       const acts = Lh.tabs.map(t => t.act).join(',');
       if (acts !== 'trainBase,arsenal,battle,shop,coinShop') fail('dock tab mapping wrong: ' + acts);
       const cellsH = home2._gridCells();
-      if (cellsH.length !== 12) fail(`grid menu should hold 12 stations, has ${cellsH.length}`);
+      if (cellsH.length !== 13) fail(`grid menu should hold 13 stations (incl. HOW TO PLAY), has ${cellsH.length}`);
       home2._gridOpen = true;
       G.__pump(6);
       if (E._error) fail('grid menu render errored: ' + E._error.message);
@@ -407,7 +407,69 @@ try {
       if (E._error) fail('throttle start errored: ' + E._error.message);
       if (E.current === home2) fail('throttle lever never started the run');
       G.__pump(10);
-      ok('home redesign OK — 5-tab steel dock, throttle lever starts the run, 12-station grid menu');
+      ok('home redesign OK — 5-tab steel dock, throttle lever starts the run, 13-station System Deck');
+
+      // ---- v1.8: learning phase — the first three sectors ramp up ----
+      E._error = null;
+      E.setScene('gameplay', { save: E.save, realmId: 'purgatory', stage: 1 });
+      G.__pump(5);
+      const gpL = E.current;
+      const l1 = gpL._learn();
+      if (!l1 || l1.elites !== false || l1.rosterMax !== 2) fail('sector 1 learning rules wrong: ' + JSON.stringify(l1 || {}));
+      if (gpL.stage >= 4 === false && gpL._learn() === null) fail('learning phase should cover stages 1-3');
+      const l4 = gpL._learn.call(Object.assign(Object.create(Object.getPrototypeOf(gpL)), { stage: 4 }));
+      if (l4 !== null) fail('stage 4 should have no training wheels');
+      if (E._error) fail('learning phase errored: ' + E._error.message);
+      ok('learning phase OK — sector 1 basics-only, ramp ends at sector 4');
+
+      // ---- v1.8: hit-stop + disintegration juice ----
+      E._error = null;
+      const fxA = gpL.fx;
+      const species = gpL.world.pickEnemyRoster(1)[0] || 'ghost';
+      const mk = gpL.spawnEnemy(species, gpL.player.x + 60, gpL.player.y);
+      if (mk) { mk.hp = 1; gpL._onKill(mk, {}); }
+      else fail('could not spawn ' + species + ' for the disintegration test');
+      const hasEmber = fxA.list.some(p => p.kind === 2 || p.kind === 6);
+      if (!hasEmber) fail('disintegration engine produced no embers/dust on kill');
+      G.__pump(3);
+      if (E._error) fail('disintegration errored: ' + E._error.message);
+      ok('disintegration engine OK — neon embers + charcoal dust on every kill');
+
+      // ---- v1.8: pause scene — score, build, opt-in post, end run ----
+      E._error = null;
+      gpL.player.score = 7777;
+      E.setScene('pause', { from: 'gameplay', ctx: { gameplay: gpL } });
+      G.__pump(6);
+      if (E._error) fail('pause errored: ' + E._error.message);
+      const pz = E.current;
+      if (typeof pz._scoreLines !== 'function' || !pz._scoreLines().length) fail('pause has no RUN SCORE view');
+      if (typeof pz._doPost !== 'function') fail('pause has no SAVE SCORE TO LEADERBOARD');
+      if (typeof pz._endRun !== 'function') fail('pause cannot END RUN');
+      const bl = pz._buildLines();
+      if (!bl.length) fail('pause build view is empty');
+      // END RUN resolves to the summary with the opt-in POST strip
+      pz._endRun();
+      G.__pump(8);
+      if (E._error) fail('pause end-run errored: ' + E._error.message);
+      if (E.current?.sceneId !== 'runSummary' && E.current?.constructor?.name !== 'RunSummaryScene') fail('END RUN did not reach the summary');
+      if (typeof E.current._doPost !== 'function') fail('summary after END RUN lost the POST strip');
+      ok('pause signal OK — score view, build view, opt-in post, end run to summary');
+
+      // ---- v1.8: tutorial gate for fresh conductors ----
+      E._error = null;
+      const fresh = E.engine ? null : null;
+      E.save.tutorialDone = false;
+      E.setScene('tutorial', { save: E.save });
+      G.__pump(6);
+      if (E._error) fail('tutorial errored: ' + E._error.message);
+      const tut = E.current;
+      if (typeof tut._next !== 'function') fail('tutorial scene missing');
+      const steps = 11;
+      for (let i = 0; i < steps; i++) tut._next();
+      G.__pump(4);
+      if (E.save.tutorialDone !== true) fail('tutorial did not set tutorialDone');
+      if (E._error) fail('tutorial walkthrough errored: ' + E._error.message);
+      ok('tutorial OK — 11 pages teach the whole line, then hands over the throttle');
 
       // ---- new weapon mechanics: charge / turret / echo, through evolution ----
       E._error = null;

@@ -145,3 +145,14 @@ Ground rules kept in mind throughout: one self-contained page, no gambling (ever
 - The big red PLAY button is now a throttle lever: steel plate, pulsing crimson signal lamp, lever quadrant (STOP->FULL), pull animation ~0.38s then the run starts.
 - Bottom steel dock with 5 tabs: TRAIN / ARSENAL / BATTLE / FORGE / SHOP; center BATTLE is a raised medallion with a glowing, slowly turning locomotive wheel + fire licks.
 - Every former sidebar tile (relics, train base, daily run, world map, boards, identity, awards, rewards, chests w/ badge, settings, all lines, coin shop) now lives in a collapsible 12-cell grid menu behind the top-right MENU button.
+
+## v1.8.0 — god-level presentation overhaul (DONE)
+- TYPOGRAPHY ARCHITECTURE: global TEXT_SCALE=1.4 in kit.js + widgets.js (label, outlineText, text, textC, fitText, wrap); every string rides a dedicated text plane rule: semi-transparent dark backing card + crisp 2px solid black outer stroke. fitTextBlock auto-sizes Ascension card descriptions to fill the card without clipping.
+- IMPACT VECTOR: enemy hit-flash stays stark white; combat text now bursts with arcade velocity and a directional arc (crits fly 1.7x harder).
+- DISINTEGRATION ENGINE: fx.disintegrate() — kills fragment into glowing neon embers + charcoal dust lines, swept by a screen-space WIND field (P_DUSTLINE kind).
+- CAMERA DIRECTOR: gameplay._impact() knob — shake + fx.aberration + radialT + glitchT; render.js gained a radial-blur composite pass; hit-stop matrix freezes the world ~0.05s on boss kills, ultimates, level-ups, lieutenants.
+- HOME: FULL AHEAD headline no longer sits on the button edge (dedicated steel rows); BATTLE tab is a breathing crimson reactor core with a locomotive skull shield; side tabs are flush mechanical toggles with status lamps; fiber-optic cable with traveling light pulse; System Deck slide-out (13 cells incl. HOW TO PLAY).
+- PAUSE SIGNAL rebuilt: RESUME / YOUR BUILD / RUN SCORE / SETTINGS / SAVE SCORE TO LEADERBOARD (opt-in, best-only) / END RUN — SAVE & EXIT (routes through the summary with its POST strip).
+- TUTORIAL: 11-page Conductor's Handbook (move, XP/ascension, weapons/evolution, furnace, ultimate, shards, coins, sectors, leaderboards) — auto-opens for new conductors, re-readable from the System Deck; skip button + progress dots.
+- LEARNING PHASE: _learn() gates sectors 1-3 — S1 basics-only (2 species, no elites/surges/lieutenant, soft boss), S2 introduces elites+chests, S3 introduces the Gauntlet lieutenant; full chaos from sector 4. Sector-intro panel prints the teaching line.
+- MASTER PALETTE: K now matte obsidian / iron charcoal / volcanic crimson / plasma blue / high-vis cyan (K.CRIM, K.PLASMA, K.CYAN); PauseScene + steelBackdrop rebuilt in the metallic terminal language.

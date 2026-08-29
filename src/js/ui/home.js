@@ -17,7 +17,7 @@ import { saveSave } from '../core/save.js';
 import { AUTH } from '../systems/auth.js';
 import { ICONS } from '../data/icons.js';
 import { SOUNDS } from '../core/sound.js';
-import { KW, KH, K, tile, label, outlineText, glyph, roundPath, clipRound, inRect, easeOut } from './kit.js';
+import { KW, KH, K, tile, label, outlineText, glyph, roundPath, clipRound, inRect, easeOut, steelPlate, steelButton, rivet } from './kit.js';
 
 const INK = K.INK;
 const ENERGY_COST = 5;
@@ -121,7 +121,7 @@ export class HomeScene {
       card: { x: 18, y: 80, w: 234, h: 118 },
       prev: { x: 2, y: 125, w: 22, h: 28 },
       next: { x: 246, y: 125, w: 22, h: 28 },
-      throttle: { x: 10, y: 208, w: 250, h: 64 },
+      throttle: { x: 10, y: 208, w: 250, h: 66 },
       goals: [
         { key: 'g0', x: 8, y: 284, w: 254, h: 30 },
         { key: 'g1', x: 8, y: 318, w: 254, h: 30 },
@@ -139,7 +139,7 @@ export class HomeScene {
     return L;
   }
 
-  // the collapsible station grid — every side icon lives here now
+  // the SYSTEM DECK — every side icon lives here now, one tap away
   _gridCells() {
     const s = this.save;
     const chests = s.chests || { common: 0, rare: 0, epic: 0 };
@@ -154,11 +154,12 @@ export class HomeScene {
       { icon: 'trophy', label: 'AWARDS', act: 'achievements' },
       { icon: 'gift', label: 'REWARDS', act: 'daily' },
       { icon: 'chest', label: 'CHESTS', badge: count, fn: () => this._openChest() },
+      { icon: 'book', label: 'HOW TO PLAY', act: 'tutorial' },
       { icon: 'cog', label: 'SETTINGS', act: 'settings' },
       { icon: 'book', label: 'ALL LINES', act: 'hub' },
       { icon: 'coinbag', label: 'COIN SHOP', act: 'coinShop' },
     ];
-    defs.forEach((d, i) => { d.r = { x: 12 + (i % 4) * 62, y: 70 + Math.floor(i / 4) * 61, w: 59, h: 56 }; });
+    defs.forEach((d, i) => { d.r = { x: 12 + (i % 4) * 62, y: 68 + Math.floor(i / 4) * 56, w: 59, h: 50 }; });
     return defs;
   }
 
@@ -171,6 +172,7 @@ export class HomeScene {
     this._grace = Math.max(0, (this._grace || 0) - dt);
     if ((this.t | 0) % 5 === 0) { this._regenEnergy(); this._ensureGoals(); }
 
+    if (this._gridOpen) this._gridAnim = Math.min(1, (this._gridAnim || 0) + dt * 3);
     // throttle lever pull — swings open, then the run begins
     if (this._thr.pulling) {
       this._thr.v = Math.min(1, this._thr.v + dt / 0.38);
@@ -205,7 +207,7 @@ export class HomeScene {
         } else if (inRect(m, GRID_CLOSE)) this._gridOpen = false;
         else if (!inRect(m, GRID_PANEL)) this._gridOpen = false;
       } else if (inRect(m, L.gridBtn)) {
-        this._gridOpen = true; this._gridHover = -1;
+        this._gridOpen = true; this._gridHover = -1; this._gridAnim = 0;
         try { SOUNDS.pickup(); } catch {}
       } else if (inRect(m, L.prev)) this._cycleRealm(-1);
       else if (inRect(m, L.next)) this._cycleRealm(1);
@@ -444,9 +446,9 @@ export class HomeScene {
       label(ctx, 'Clear ' + (REALMS[this.realmIndex - 1]?.name || 'the previous sector'), KW / 2, c.y + c.h / 2 + 34, '#e8d0d0', 6);
     } else {
       ctx.fillStyle = 'rgba(10,6,14,0.62)';
-      ctx.fillRect(c.x + 2, c.y + c.h - 22, c.w - 4, 20);
-      label(ctx, 'Boss: ' + realm.boss.name, KW / 2, c.y + c.h - 12, '#f0e0d0', 6);
-      label(ctx, 'Longest survived: ' + fmtTime(this.save.stats?.longestRun || 0), KW / 2, c.y + c.h - 4, '#c8b0b0', 5);
+      ctx.fillRect(c.x + 2, c.y + c.h - 26, c.w - 4, 24);
+      label(ctx, 'BOSS: ' + realm.boss.name.toUpperCase(), KW / 2, c.y + c.h - 16, '#f0e0d0', 6);
+      label(ctx, 'Longest survived: ' + fmtTime(this.save.stats?.longestRun || 0), KW / 2, c.y + c.h - 5, '#c8b0b0', 5);
     }
     this._chevron(ctx, L.prev, -1, this.hover === 'prev');
     this._chevron(ctx, L.next, 1, this.hover === 'next');
@@ -630,6 +632,8 @@ export class HomeScene {
     const ready = this.realmUnlocked;
     const hov = this.hover === 'throttle';
     const t = this.t;
+    // v1.8: taller housing — the headline sits on its own steel row,
+    // never on top of the button edge again.
     steelPlate(ctx, b.x, b.y, b.w, b.h, { tone: 1 });
     if (ready) {
       ctx.globalAlpha = 0.45 + 0.25 * Math.sin(t * 3.2);
@@ -638,25 +642,28 @@ export class HomeScene {
       ctx.globalAlpha = 1;
     }
     // signal lamp
-    const lampX = b.x + 24, lampY = b.y + b.h / 2;
-    ctx.beginPath(); ctx.arc(lampX, lampY, 11, 0, TAU);
+    const lampX = b.x + 22, lampY = b.y + 24;
+    ctx.beginPath(); ctx.arc(lampX, lampY, 10, 0, TAU);
     ctx.fillStyle = '#191519'; ctx.fill();
     ctx.strokeStyle = '#0c0a0e'; ctx.lineWidth = 2; ctx.stroke();
     if (ready) {
-      const lg = ctx.createRadialGradient(lampX, lampY, 1, lampX, lampY, 9);
+      const lg = ctx.createRadialGradient(lampX, lampY, 1, lampX, lampY, 8);
       lg.addColorStop(0, '#ff8d7e'); lg.addColorStop(1, '#d5202e');
-      ctx.beginPath(); ctx.arc(lampX, lampY, 7.5, 0, TAU); ctx.fillStyle = lg; ctx.fill();
-      ctx.globalAlpha = 0.22 + 0.1 * Math.sin(t * 4);
-      ctx.beginPath(); ctx.arc(lampX, lampY, 14, 0, TAU); ctx.fillStyle = 'rgba(255,60,50,0.5)'; ctx.fill();
+      ctx.beginPath(); ctx.arc(lampX, lampY, 7, 0, TAU); ctx.fillStyle = lg; ctx.fill();
+      ctx.globalAlpha = 0.2 + 0.1 * Math.sin(t * 4);
+      ctx.beginPath(); ctx.arc(lampX, lampY, 13, 0, TAU); ctx.fillStyle = 'rgba(255,60,50,0.5)'; ctx.fill();
       ctx.globalAlpha = 1;
     } else {
-      ctx.beginPath(); ctx.arc(lampX, lampY, 7.5, 0, TAU); ctx.fillStyle = '#3c3742'; ctx.fill();
+      ctx.beginPath(); ctx.arc(lampX, lampY, 7, 0, TAU); ctx.fillStyle = '#3c3742'; ctx.fill();
     }
-    outlineText(ctx, ready ? 'FULL AHEAD' : 'LOCKED', lampX + 20, b.y + 26, ready ? '#ffece6' : '#9a92a0', '#2a0c10', 15);
-    label(ctx, (this.engine._difficulty || 'normal').toUpperCase() + ' \u00b7 no energy, ever', lampX + 20, b.y + 40, '#d8a8a0', 6, 'left');
+    // row 1 — headline beside the lamp
+    outlineText(ctx, ready ? 'FULL AHEAD' : 'LOCKED', lampX + 22, b.y + 20, ready ? '#ffece6' : '#9a92a0', '#2a0c10', 13);
+    // row 2 — context line
+    label(ctx, (this.engine._difficulty || 'normal').toUpperCase() + ' \u00b7 no energy, ever', lampX + 22, b.y + 36, '#d8a8a0', 6, 'left');
+    // row 3 — action line on the bottom strip, clear of the lever quadrant
     label(ctx, ready
-      ? (this._thr.pulling ? 'LEVER OPEN — GO GO GO' : hov ? 'PULL THE LEVER' : 'TAP TO PULL THE LEVER')
-      : 'CLEAR ' + (REALMS[this.realmIndex - 1]?.name || 'THE FIRST SECTOR') + ' FIRST', lampX + 20, b.y + 53, ready ? '#ff8d7e' : '#8a8494', 6, 'left');
+      ? (this._thr.pulling ? '\u25b2 LEVER OPEN \u2014 GO GO GO' : hov ? '\u25b2 PULL THE LEVER' : 'TAP TO PULL THE LEVER')
+      : 'CLEAR THE PREVIOUS SECTOR FIRST', b.x + (b.w - 52) / 2, b.y + 56, ready ? '#ff8d7e' : '#8a8494', 6);
     // lever quadrant
     const qx = b.x + b.w - 52, qy = b.y + 8, qw = 40, qh = b.h - 16;
     roundPath(ctx, qx, qy, qw, qh, 6);
@@ -686,7 +693,7 @@ export class HomeScene {
   // ---- daily goals (fixed, exact, claimable) ----
   _goals(ctx, L) {
     const s = this.save;
-    label(ctx, 'GOAL STREAK ' + (s.dailyStreak || 0) + ' \u00b7 TODAY\u2019S PAYOUT ' + goalReward(s) + ' COINS \u00b7 BOTH = +2\u25c6', 10, 278, '#8a8494', 6, 'left');
+    label(ctx, 'GOAL STREAK ' + (s.dailyStreak || 0) + ' \u00b7 TODAY\u2019S PAYOUT ' + goalReward(s) + ' COINS \u00b7 BOTH = +2\u25c6', 10, 280, '#8a8494', 6, 'left');
     const goals = s.dailyGoals?.goals || [];
     goals.slice(0, 2).forEach((g, i) => {
       const r = L.goals[i];
@@ -707,63 +714,109 @@ export class HomeScene {
     });
   }
 
-  // ---- the steel dock: TRAIN / ARSENAL / BATTLE / FORGE / SHOP ----
+  // ---- the steel dock: flush mechanical toggles + fiber-optic cable ----
   _dock(ctx, L) {
     const t = this.t;
     steelPlate(ctx, L.dock.x, L.dock.y, L.dock.w, L.dock.h, { r: 0 });
-    const sig = 0.5 + 0.5 * Math.sin(t * 2.4);
-    ctx.fillStyle = `rgba(255,59,70,${(0.3 + 0.35 * sig).toFixed(2)})`;
-    ctx.fillRect(6, L.dock.y + 2.5, KW - 12, 1.5);
+    // fiber-optic cable run — a traveling light pulse rides the line
+    ctx.fillStyle = '#14121a'; ctx.fillRect(0, L.dock.y + 1, KW, 4);
+    for (const seg of [[0, KW / 2 - 40], [KW / 2 + 40, KW]]) {
+      ctx.strokeStyle = 'rgba(77,125,255,0.35)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(seg[0], L.dock.y + 3); ctx.lineTo(seg[1], L.dock.y + 3); ctx.stroke();
+    }
+    const px = ((t * 90) % (KW + 160)) - 80;
+    const pg = ctx.createRadialGradient(px, L.dock.y + 3, 0, px, L.dock.y + 3, 26);
+    pg.addColorStop(0, 'rgba(40,240,224,0.85)'); pg.addColorStop(1, 'rgba(40,240,224,0)');
+    ctx.fillStyle = pg; ctx.fillRect(px - 26, L.dock.y - 10, 52, 26);
     L.tabs.forEach((tab, i) => {
       const r = L.tabRects[i];
       const hov = this.hover === 'tab:' + tab.key;
       if (tab.key === 'battle') return this._battleTab(ctx, r, hov);
-      steelButton(ctx, r.x + 4, r.y + 4, r.w - 8, r.h - 4, { tone: hov ? 2 : 1 });
-      glyph(ctx, tab.icon, r.x + r.w / 2 - 10, r.y + 16, 20, hov ? '#ffd7d0' : '#b0aaba');
-      label(ctx, tab.label, r.x + r.w / 2, r.y + 56, hov ? '#ffece6' : '#8a8494', 7);
+      // flush mechanical toggle: slot + switch cap + status lamp
+      ctx.fillStyle = '#0e0c12';
+      roundPath(ctx, r.x + 5, r.y + 8, r.w - 10, r.h - 12, 7); ctx.fill();
+      ctx.strokeStyle = '#0c0a0e'; ctx.lineWidth = 1.5; ctx.stroke();
+      steelButton(ctx, r.x + 7, r.y + (hov ? 4 : 6), r.w - 14, r.h - (hov ? 14 : 18), { tone: hov ? 2 : 1, r: 6 });
+      // status lamp — cyan when hovered, dead otherwise
+      ctx.beginPath(); ctx.arc(r.x + r.w / 2, r.y + (hov ? 11 : 13), 2.2, 0, TAU);
+      ctx.fillStyle = hov ? '#28f0e0' : '#332f3a'; ctx.fill();
+      glyph(ctx, tab.icon, r.x + r.w / 2 - 10, r.y + 20, 20, hov ? '#ffd7d0' : '#b0aaba');
+      label(ctx, tab.label, r.x + r.w / 2, r.y + 60, hov ? '#ffece6' : '#8a8494', 6);
     });
   }
 
-  // BATTLE: raised medallion with a glowing, turning locomotive wheel
+  // BATTLE: the core engine — breathing crimson reactor + locomotive skull
   _battleTab(ctx, r, hov) {
     const t = this.t;
-    const cx = r.x + r.w / 2, cy = r.y + 26;
-    const g = ctx.createRadialGradient(cx, cy, 6, cx, cy, 42);
-    g.addColorStop(0, 'rgba(255,70,50,0.42)'); g.addColorStop(1, 'rgba(255,70,50,0)');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 42, 0, TAU); ctx.fill();
-    ctx.beginPath(); ctx.arc(cx, cy, 27, 0, TAU); ctx.fillStyle = '#2e2a34'; ctx.fill();
+    const cx = r.x + r.w / 2, cy = r.y + 28;
+    // breathing light — slow, alive
+    const breathe = 0.5 + 0.5 * Math.sin(t * 1.7);
+    const halo = ctx.createRadialGradient(cx, cy, 4, cx, cy, 44 + breathe * 8);
+    halo.addColorStop(0, `rgba(255,59,70,${(0.5 + breathe * 0.25).toFixed(2)})`);
+    halo.addColorStop(1, 'rgba(255,59,70,0)');
+    ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(cx, cy, 52, 0, TAU); ctx.fill();
+    // reactor casing
+    ctx.beginPath(); ctx.arc(cx, cy, 29, 0, TAU); ctx.fillStyle = '#2e2a34'; ctx.fill();
     ctx.lineWidth = 3; ctx.strokeStyle = hov ? '#8a8090' : '#4a444e'; ctx.stroke();
-    ctx.beginPath(); ctx.arc(cx, cy, 22, 0, TAU); ctx.fillStyle = '#17141c'; ctx.fill();
+    // inner glow chamber
+    ctx.beginPath(); ctx.arc(cx, cy, 24, 0, TAU);
+    const chamber = ctx.createRadialGradient(cx, cy, 2, cx, cy, 24);
+    chamber.addColorStop(0, `rgba(255,120,90,${(0.55 + breathe * 0.3).toFixed(2)})`);
+    chamber.addColorStop(1, '#17141c');
+    ctx.fillStyle = chamber; ctx.fill();
     ctx.strokeStyle = '#0c0a0e'; ctx.lineWidth = 2; ctx.stroke();
+    // turning drive wheel spokes behind the skull
     const rot = t * 0.9;
-    ctx.save(); ctx.translate(cx, cy);
-    ctx.strokeStyle = '#ff5a4a'; ctx.lineWidth = 2.4;
+    ctx.save(); ctx.translate(cx, cy); ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = '#ff5a4a'; ctx.lineWidth = 2;
     for (let i = 0; i < 3; i++) {
       const a = rot + (i * Math.PI) / 3;
-      ctx.beginPath(); ctx.moveTo(Math.cos(a) * -13, Math.sin(a) * -13); ctx.lineTo(Math.cos(a) * 13, Math.sin(a) * 13); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(Math.cos(a) * -11, Math.sin(a) * -11); ctx.lineTo(Math.cos(a) * 11, Math.sin(a) * 11); ctx.stroke();
     }
-    ctx.beginPath(); ctx.arc(0, 0, 13, 0, TAU); ctx.strokeStyle = '#ff7a60'; ctx.lineWidth = 2.6; ctx.stroke();
-    ctx.beginPath(); ctx.arc(0, 0, 3.4, 0, TAU); ctx.fillStyle = '#ffd2b0'; ctx.fill();
     ctx.restore();
-    // fire licks over the wheel
+    // THE LOCOMOTIVE SKULL — shield face over the core
+    ctx.save(); ctx.translate(cx, cy - 1);
+    ctx.fillStyle = '#0d0b10';
+    ctx.beginPath();
+    ctx.moveTo(-13, -9); ctx.lineTo(13, -9); ctx.lineTo(13, 4);
+    ctx.lineTo(7, 11); ctx.lineTo(-7, 11); ctx.lineTo(-13, 4);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#ff7a60'; ctx.lineWidth = 1.6; ctx.stroke();
+    // glowing eye slits (plasma cyan — vital target data)
+    ctx.fillStyle = `rgba(40,240,224,${(0.75 + breathe * 0.25).toFixed(2)})`;
+    ctx.fillRect(-9, -4, 6, 3.2); ctx.fillRect(3, -4, 6, 3.2);
+    // grill teeth
+    ctx.fillStyle = '#ff7a60';
+    for (let i = -8; i <= 6; i += 4) ctx.fillRect(i, 4, 2.4, 4.5);
+    // smokestack crown
+    ctx.fillStyle = '#0d0b10';
+    ctx.fillRect(-3, -14, 6, 5);
+    ctx.strokeStyle = '#ff7a60'; ctx.lineWidth = 1.2;
+    ctx.strokeRect(-3, -14, 6, 5);
+    ctx.restore();
+    // fire licks around the crown
     for (let i = -1; i <= 1; i++) {
-      const fx = cx + i * 9, fh = 5 + 3 * Math.sin(t * 7 + i * 2);
+      const fx = cx + i * 8, fh = 4 + 3 * Math.sin(t * 7 + i * 2);
       ctx.beginPath();
-      ctx.moveTo(fx - 3, cy - 16);
-      ctx.quadraticCurveTo(fx, cy - 16 - fh * 2, fx + 3, cy - 16);
+      ctx.moveTo(fx - 2.6, cy - 15);
+      ctx.quadraticCurveTo(fx, cy - 15 - fh * 2.2, fx + 2.6, cy - 15);
       ctx.closePath();
-      ctx.fillStyle = i === 0 ? 'rgba(255,190,90,0.85)' : 'rgba(255,110,60,0.65)';
+      ctx.fillStyle = i === 0 ? 'rgba(255,190,90,0.85)' : 'rgba(255,110,60,0.6)';
       ctx.fill();
     }
-    label(ctx, 'BATTLE', cx, r.y + 60, hov ? '#ffece6' : '#ff8d7e', 8);
+    label(ctx, 'BATTLE', cx, r.y + 62, hov ? '#ffece6' : '#ff8d7e', 7);
   }
 
-  // ---- collapsible grid menu: every station, one tap away ----
+  // ---- SYSTEM DECK: sleek slide-out from the upper right ----
   _gridPanel(ctx) {
     const cells = this._gridCells();
-    ctx.fillStyle = 'rgba(6,4,10,0.62)'; ctx.fillRect(0, 0, KW, KH);
+    const k = easeOut(Math.min(1, (this._gridAnim || 0) * 2.4));
+    ctx.fillStyle = `rgba(6,4,10,${(0.62 * k).toFixed(2)})`; ctx.fillRect(0, 0, KW, KH);
+    ctx.save();
+    ctx.globalAlpha = k;
+    ctx.translate((1 - k) * 60, 0);
     steelPlate(ctx, GRID_PANEL.x, GRID_PANEL.y, GRID_PANEL.w, GRID_PANEL.h, { r: 10 });
-    label(ctx, 'ALL STATIONS', 22, 60, '#e8e2ec', 8, 'left');
+    label(ctx, 'SYSTEM DECK', 22, 60, '#e8e2ec', 8, 'left');
     label(ctx, 'TAP OUTSIDE TO CLOSE', 206, 60, '#6a6474', 5, 'right');
     // X
     ctx.strokeStyle = '#b8b2c2'; ctx.lineWidth = 2;
@@ -783,55 +836,11 @@ export class HomeScene {
         label(ctx, String(c.badge), bx, by + 2.5, '#ffffff', 7);
       }
     });
+    ctx.restore();
   }
 }
 
-// ============================================================
-// RIVETED STEEL PRIMITIVES
-// ============================================================
-function rivet(ctx, x, y, r = 1.7) {
-  ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fillStyle = '#1a171d'; ctx.fill();
-  ctx.beginPath(); ctx.arc(x - r * 0.3, y - r * 0.3, r * 0.55, 0, TAU); ctx.fillStyle = '#8b8592'; ctx.fill();
-}
-function steelPlate(ctx, x, y, w, h, opts = {}) {
-  const tone = opts.tone || 0;
-  const top = tone === 2 ? '#4a4550' : tone === 1 ? '#3a3640' : '#332f3a';
-  const mid = tone === 2 ? '#37333e' : tone === 1 ? '#2b2832' : '#26222c';
-  const bot = tone === 2 ? '#211e28' : tone === 1 ? '#1b1820' : '#171419';
-  const rad = opts.r ?? 8;
-  const g = ctx.createLinearGradient(0, y, 0, y + h);
-  g.addColorStop(0, top); g.addColorStop(0.5, mid); g.addColorStop(1, bot);
-  roundPath(ctx, x, y, w, h, rad);
-  ctx.fillStyle = g; ctx.fill();
-  ctx.strokeStyle = 'rgba(210,200,220,0.16)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(x + 4, y + 0.5); ctx.lineTo(x + w - 4, y + 0.5); ctx.stroke();
-  ctx.strokeStyle = 'rgba(0,0,0,0.55)';
-  ctx.beginPath(); ctx.moveTo(x + 4, y + h - 0.5); ctx.lineTo(x + w - 4, y + h - 0.5); ctx.stroke();
-  ctx.strokeStyle = '#0c0a0e'; ctx.lineWidth = 1.5;
-  roundPath(ctx, x, y, w, h, rad); ctx.stroke();
-  // rust mottling — deterministic, no flicker
-  const n = Math.max(2, Math.floor((w * h) / 2600));
-  for (let i = 0; i < n; i++) {
-    const rx = x + 6 + ((i * 53) % Math.max(1, w - 12));
-    const ry = y + 6 + ((i * 97 + 31) % Math.max(1, h - 12));
-    ctx.fillStyle = `rgba(150,68,26,${(0.05 + ((i * 7) % 5) * 0.012).toFixed(3)})`;
-    ctx.beginPath(); ctx.arc(rx, ry, 2 + (i % 3), 0, TAU); ctx.fill();
-  }
-  rivet(ctx, x + 5, y + 5); rivet(ctx, x + w - 5, y + 5);
-  rivet(ctx, x + 5, y + h - 5); rivet(ctx, x + w - 5, y + h - 5);
-  if (w > 100) { rivet(ctx, x + w / 2, y + 5); rivet(ctx, x + w / 2, y + h - 5); }
-  if (w > 200) {
-    rivet(ctx, x + w * 0.25, y + 5); rivet(ctx, x + w * 0.75, y + 5);
-    rivet(ctx, x + w * 0.25, y + h - 5); rivet(ctx, x + w * 0.75, y + h - 5);
-  }
-}
-function steelButton(ctx, x, y, w, h, opts = {}) {
-  steelPlate(ctx, x, y, w, h, { tone: opts.tone ?? 1, r: opts.r ?? 7 });
-  ctx.fillStyle = 'rgba(0,0,0,0.25)';
-  ctx.fillRect(x + 3, y + 2, Math.max(0, w - 6), 1.5);
-}
-
-const GRID_PANEL = { x: 8, y: 44, w: 254, h: 224 };
+const GRID_PANEL = { x: 8, y: 44, w: 254, h: 288 };
 const GRID_CLOSE = { x: 234, y: 50, w: 22, h: 18 };
 
 function fitC(ctx, s, w, size) {

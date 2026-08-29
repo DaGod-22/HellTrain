@@ -147,6 +147,19 @@ export class Renderer {
       out.drawImage(this.scene, 0, 0);
     }
 
+    // 3.5) RADIAL BLUR — high-impact moments smear outward from center ----
+    const radial = (opts.radial || 0);
+    if (radial > 0.05) {
+      out.globalCompositeOperation = 'lighter';
+      out.globalAlpha = 0.16 * Math.min(1, radial);
+      const cx = w / 2, cy = h / 2, sc = 1 + 0.035 * Math.min(1, radial);
+      out.setTransform(sc, 0, 0, sc, cx - cx * sc, cy - cy * sc);
+      out.drawImage(this.scene, 0, 0);
+      out.setTransform(1, 0, 0, 1, 0, 0);
+      out.globalAlpha = 1;
+      out.globalCompositeOperation = 'source-over';
+    }
+
     // 4) colour grade ----------------------------------------------------
     if (gradeCol && gradeAmt > 0.01) {
       out.globalCompositeOperation = 'soft-light';

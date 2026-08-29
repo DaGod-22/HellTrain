@@ -20,7 +20,7 @@ import {
   MenuScene, WorldMapScene, TrainBaseScene, RunSummaryScene, PauseScene,
   AchievementsScene, LeaderboardScene, DailyRunScene, WeeklyChallengeScene,
   SettingsScene, ArsenalScene, ArmouryScene, RelicsScene,
-  ProfileScene, DailyRewardsScene, IdentityScene,
+  ProfileScene, DailyRewardsScene, IdentityScene, TutorialScene,
 } from './ui/menu.js';
 import { settleSeason } from './data/season.js';
 
@@ -96,6 +96,7 @@ async function boot() {
   engine.addScene('coinShop', new CoinShopScene(engine)); // coin shop (fixed-price goods)
   engine.addScene('profile', new ProfileScene(engine));
   engine.addScene('identity', new IdentityScene(engine));
+  engine.addScene('tutorial', new TutorialScene(engine));
 
   if (typeof globalThis !== 'undefined') globalThis.__ENGINE__ = engine;
   // v1.7: settle LAST month's season once (rank-locked avatar/frame + printed payouts).
@@ -108,7 +109,9 @@ async function boot() {
       })
       .catch(() => {});
   } catch {}
-  engine.setScene('menu');
+  // v1.8: first-time conductors get the handbook before the depot
+  if (!save.tutorialDone) engine.setScene('tutorial', { save });
+  else engine.setScene('menu');
   engine.start();
 
   window.addEventListener('beforeunload', () => saveSave(engine.save));

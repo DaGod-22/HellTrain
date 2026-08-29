@@ -222,6 +222,10 @@ export class GameplayScene {
     this.owned = {};                 // ascension id -> level
     this.pendingLevelUps = 0;
     this.cards = null;
+    // v1.8 CAMERA DIRECTOR + HIT-STOP MATRIX
+    this.hitStop = 0;      // world freezes exactly this long on big hits
+    this.radialT = 0;      // radial-blur decay timer
+    this.glitchT = 0;      // extra chromatic-aberration decay timer
     this.cardIndex = 0;
     this.rerolls = (this.player.freeRerolls || 0);
     this.banishes = 1;
@@ -435,6 +439,7 @@ export class GameplayScene {
     if (!target || !target.alive) return 0;
     const p = this.player;
     const { dmg, crit } = p.rollDamage(amount, target);
+    target._lastCrit = !!crit;
     let final = dmg;
     // WEAPON MASTERY — the more kills a weapon family lands, the harder it hits
     if (opts.family) {
@@ -530,6 +535,8 @@ export class GameplayScene {
       if (e === this.lieutenant) {
         this.lieutenant = null;
         this.gameStats.shards += 40;
+        this._impact(0.7, { hitStop: 0.05, tint: '#ffe066' });
+        try { this.fx.disintegrate(e.x, e.y, '#ffe066', 16); } catch {}
         this.fx.banner(this.player.x, this.player.y - 50, 'LIEUTENANT DOWN — +40 SHARDS', '#ffe066');
         this.director.eliteT = Math.max(this.director.eliteT, 20);
       }
@@ -551,9 +558,11 @@ export class GameplayScene {
       this.fx.spawn({ x: e.x, y: e.y, vx: 0, vy: -20, color: '#ff7a33', life: 0.5, size: 3, endSize: 0.5 });
     }
 
-    // visuals
+    // visuals — v1.8: fragment into neon embers + charcoal dust on the wind
     this.fx.explosion(e.x, e.y, 'impact', (e.radius || 7) / 9, { light: 0.6, speed: 26 });
-    this.fx.blood(e.x, e.y, '#7a1010', e.giant ? 14 : 7);
+    this.fx.blood(e.x, e.y, '#7a1010', e.giant ? 10 : 4);
+    try { this.fx.disintegrate(e.x, e.y, e.color || '#ff7a55', e.radius || 7); } catch {}
+    if (e._lastCrit) this._impact(0.22);
     this.fx.decal(e.x, e.y, (e.radius || 7) * 0.8, '#2a0808', 10);
     this.fx.shard(e.x, e.y, '#ffd0a0', 4);
 
@@ -569,6 +578,8 @@ export class GameplayScene {
     this.pickups.push(new Pickup(xpType, e.x, e.y, Math.round((e.xp || 4) * (this.routeMods?.xpMul ?? 1) * (this.difficulty.xpMult || 1))));
     if (e.eliteMod) {
       this.gameStats.elites++;
+      this._impact(0.45, { hitStop: 0.04 });
+      try { this.fx.disintegrate(e.x, e.y, '#8ef0ff', 12); } catch {}
       for (let i = 0; i < 3; i++) this.pickups.push(new Pickup('shard', e.x + rand(-6, 6), e.y + rand(-6, 6), 4)); // 3 x 4 = exactly 12
       this.fx.banner(e.x, e.y - 26, 'ELITE — +12 SHARDS', '#8ef0ff');
       if (Math.random() < 0.7) this.pickups.push(new Pickup('heart', e.x, e.y, 30));
@@ -603,6 +614,8 @@ export class GameplayScene {
     this.time.slowmo(1.6, 0.25);
     this.camera.shake(1);
     try { this.fx.banner(this.player.x, this.player.y - 60, 'BOSS DOWN — +60 SHARDS', '#ffe066'); } catch {}
+    this._impact(1.0, { hitStop: 0.05, tint: '#ff3b46' });
+    try { this.fx.disintegrate(b.x, b.y, b.color || '#ff5a4a', 26); } catch {}
     this.fx.explosion(b.x, b.y, 'explFire', 4, { lightColor: '#ffe066' });
     this.fx.banner(b.x, b.y - 40, b.name + ' DESTROYED', '#ffe066');
     for (let i = 0; i < 24; i++) this.pickups.push(new Pickup('coin', b.x + rand(-30, 30), b.y + rand(-30, 30), 10));
@@ -645,7 +658,7 @@ export class GameplayScene {
     }
     this.fx.banner(this.player.x, this.player.y - 34, 'LEVEL ' + this.player.level, '#8ef0ff');
     this.fx.ring(this.player.x, this.player.y, 40, '#8ef0ff', 0.5, 3);
-    if (!this.cards) this._openCards();
+    if (!this.cards) { this._impact(0.5, { hitStop: 0.05, tint: '#28f0e0' }); this._openCards(); }
   }
   _openCards() {
     if (this.pendingLevelUps <= 0) return;
@@ -877,6 +890,7 @@ export class GameplayScene {
     }
     this.pickups.length = 0;
     this.routeCards = { opts: routeOptions(this.stage + 1, this.runSeed), t: 0, idx: -1 };
+    this._impact(0.6, { tint: '#4d7dff' });
     this.time.slowmo(1.2, 0.4);
     try { SOUNDS.chest(); } catch {}
   }
@@ -1181,13 +1195,47 @@ export class GameplayScene {
   // ================================================================
   // DIRECTOR — continuous escalating waves
   // ================================================================
+  // v1.8 CAMERA DIRECTOR — one knob for shake + aberration + radial smear
+  _impact(strength = 0.5, opts = {}) {
+    const f = this.fx;
+    f.shakeScreen(4 + strength * 10, 0.22 + strength * 0.18);
+    f.aberration = Math.max(f.aberration, 0.8 + strength * 2.2);
+    this.glitchT = Math.max(this.glitchT, 0.18 + strength * 0.22);
+    this.radialT = Math.max(this.radialT, 0.16 + strength * 0.3);
+    if (opts.hitStop) this.hitStop = Math.max(this.hitStop, opts.hitStop);
+    if (opts.tint) f.screenTint(opts.tint, 0.14 + strength * 0.1);
+  }
+
+  // v1.8 LEARNING PHASE — the first three sectors teach the game one
+  // idea at a time; everything is on the table from sector 4 onward.
+  _learn() {
+    const st = this.stage;
+    if (st >= 4) return null;
+    if (st === 1) return {
+      rosterMax: 2, themed: false, countMul: 0.55, capMul: 0.6, hpMul: 0.75,
+      elites: false, surges: false, lieutenant: false, bossHp: 0.6,
+      label: 'SECTOR 1 \u00b7 BASICS \u2014 MOVE, AUTO-FIRE, GRAB XP',
+    };
+    if (st === 2) return {
+      rosterMax: 3, themed: true, countMul: 0.75, capMul: 0.8, hpMul: 0.9,
+      elites: 'lite', surges: false, lieutenant: false, bossHp: 0.85,
+      label: 'SECTOR 2 \u00b7 NEW: ELITE PACKS, CHESTS, KEEP THE TRAIN ALIVE',
+    };
+    return {
+      rosterMax: 4, themed: true, countMul: 0.9, capMul: 0.9, hpMul: 1,
+      elites: true, surges: false, lieutenant: true, bossHp: 1,
+      label: 'SECTOR 3 \u00b7 NEW: THE GAUNTLET \u2014 A LIEUTENANT HUNTS YOU',
+    };
+  }
+
   _director(dt) {
     const d = this.director;
     d.t += dt;
-    const stageMul = 1 + (this.stage - 1) * 0.35;
+    const lrn = this._learn();
+    const stageMul = (1 + (this.stage - 1) * 0.35) * (lrn ? lrn.countMul : 1);
     const timeMul = 1 + d.t / 55;
     // readability governor: hard ceiling keeps the screen readable at the hardest point
-    const cap = Math.min(this._enemyCap, Math.min(44, Math.round(26 * stageMul * timeMul * 0.6)));
+    const cap = Math.min(this._enemyCap, Math.min(44, Math.round(26 * stageMul * timeMul * 0.6 * (lrn ? lrn.capMul : 1))));
     let alive = 0;
     for (const e of this.enemies) if (e.alive) alive++;
 
@@ -1195,8 +1243,9 @@ export class GameplayScene {
     if (d.nextWave <= 0 && alive < cap) {
       d.wave++;
       d.nextWave = Math.max(0.7, 2.2 - d.t / 90);
-      const roster = this.world.pickEnemyRoster(this.stage);
-      const themed = this.theme.roster;
+      let roster = this.world.pickEnemyRoster(this.stage);
+      if (lrn) roster = roster.slice(0, lrn.rosterMax);
+      const themed = (lrn && !lrn.themed) ? [] : this.theme.roster;
       const count = Math.min(cap - alive, Math.round(rand(4, 7) * stageMul * Math.min(3.4, timeMul)));
       for (let i = 0; i < count; i++) {
         const a = rand(0, TAU);
@@ -1209,7 +1258,7 @@ export class GameplayScene {
         if (e) {
           // past sector 1 we stop inflating HP into a sponge and start
           // pushing speed and pattern pressure instead
-          const hpScale = Math.min(2.4, 1 + d.t / 130 + (this.stage - 1) * 0.3);
+          const hpScale = Math.min(2.4, 1 + d.t / 130 + (this.stage - 1) * 0.3) * (lrn ? lrn.hpMul : 1);
           e.maxHp *= hpScale * (this.routeMods?.hpMul ?? 1); e.hp = e.maxHp;
           e.dmg *= 1 + d.t / 260;
           e.spd *= Math.min(1.45, 1 + (this.stage - 1) * 0.1) * (this.routeMods?.spdMul ?? 1);
@@ -1220,9 +1269,10 @@ export class GameplayScene {
     }
     // elite pack (pressure rises with sector)
     d.eliteT -= dt;
+    const eliteOk = !lrn || lrn.elites === true || (lrn.elites === 'lite' && d.t > 30);
     if (d.eliteT <= 0) {
-      d.eliteT = Math.max(18, 44 - d.t / 16);
-      this._spawnElite();
+      d.eliteT = Math.max(18, (44 - d.t / 16) * (lrn && lrn.elites === 'lite' ? 2 : 1));
+      if (eliteOk) this._spawnElite();
     }
     // treasure
     d.chestT -= dt;
@@ -1237,7 +1287,7 @@ export class GameplayScene {
     if (!this.bossSpawned && (d.t > this.sectorDuration*0.7 || d.t > 90 + this.stage*10)) this._spawnBoss();
 
     // ---- ESCALATION (stage 2+): CLOSING RING surges ----
-    if (this.stage >= 2 && !this.bossSpawned) {
+    if (this.stage >= 4 && !lrn && !this.bossSpawned) {
       this.surgeT -= dt;
       if (this.surgeT <= 0) {
         this.surgeT = 26;
@@ -1245,7 +1295,7 @@ export class GameplayScene {
       }
     }
     // ---- THE GAUNTLET (stage 3): a named lieutenant with a health bar ----
-    if (this.stage >= 3 && !this.lieutenant && !this.bossSpawned && d.t > this.lieutenantT) {
+    if (this.stage >= 3 && (!lrn || lrn.lieutenant) && !this.lieutenant && !this.bossSpawned && d.t > this.lieutenantT) {
       this._spawnLieutenant();
     }
   }
@@ -1359,6 +1409,8 @@ export class GameplayScene {
     const b = new Boss(def.id, this.player.x + Math.cos(a) * 150, this.player.y + Math.sin(a) * 150,
       this.realmId, this.difficulty, this.art);
     b._id = 'boss';
+    const lrnB = this._learn();
+    if (lrnB && lrnB.bossHp < 1) { b.maxHp = Math.max(40, Math.round(b.maxHp * lrnB.bossHp)); b.hp = b.maxHp; }
     this.boss = b;
     this.fx.banner(this.player.x, this.player.y - 50, def.name.toUpperCase(), '#ff4d6a');
     this.fx.screenTint('#ff3020', 0.5);
@@ -1378,6 +1430,16 @@ export class GameplayScene {
       this.cardT = (this.cardT || 0) + rawDt;
       this._updateCards();
       this.fx.update(rawDt * 0.25);
+      input.endFrame();
+      return;
+    }
+
+    // HIT-STOP MATRIX: high-impact moments freeze the world for a beat —
+    // only the fx afterglow keeps breathing at 12% speed.
+    if (this.hitStop > 0) {
+      this.hitStop = Math.max(0, this.hitStop - rawDt);
+      this.fx.update(rawDt * 0.12);
+      this.camera.update?.(rawDt);
       input.endFrame();
       return;
     }
@@ -1480,6 +1542,7 @@ export class GameplayScene {
     if (this.input.wasPressed('KeyQ') && !this.train.dead && this.train.energy >= this.train.maxEnergy
         && !this.train.overdrive) {
       this.train.activateUltimate(this, false);
+      this._impact(0.9, { hitStop: 0.05, tint: '#28f0e0' });
     }
     // MEDICAL CAR: the medical car pulses a slow heal when you stay close
     if ((this.train.carriageLoadout || []).includes('medical') && !this.train.dead) {
@@ -1572,6 +1635,8 @@ export class GameplayScene {
     if (this._magnetT > 0) { this._magnetT -= dt; if (this._magnetT <= 0) this.magnetAll = false; }
 
     // ---- camera & fx ----
+    this.glitchT = Math.max(0, this.glitchT - dt);
+    this.radialT = Math.max(0, this.radialT - dt);
     this.fx.update(dt);
     this.camera.follow(p.x, p.y, rawDt, p.vx, p.vy);
     this.camera.update(rawDt);
@@ -1749,9 +1814,16 @@ export class GameplayScene {
     const mx = input.mouse.x, my = input.mouse.y;
     const geo = this._cardGeometry();
     this.cardIndex = -1;
+    this._cardLean = this._cardLean || [];
     for (let i = 0; i < n; i++) {
       const g = geo[i];
       if (mx >= g.x && mx <= g.x + g.w && my >= g.y && my <= g.y + g.h) this.cardIndex = i;
+    }
+    // v1.8 3D-TILT PARITY: each card eases its lean toward the cursor
+    for (let i = 0; i < n; i++) {
+      const g = geo[i];
+      const target = this.cardIndex === i ? Math.max(-1, Math.min(1, ((mx - (g.x + g.w / 2)) / (g.w / 2)) * 1.15)) : 0;
+      this._cardLean[i] = (this._cardLean[i] || 0) + (target - (this._cardLean[i] || 0)) * 0.22;
     }
     for (let i = 0; i < n; i++) {
       if (input.wasPressed('Digit' + (i + 1)) || input.wasPressed('Numpad' + (i + 1))) { this._pickCard(i); return; }
@@ -2131,6 +2203,7 @@ export class GameplayScene {
       gradeAmount: this.apocalypseActive ? 0.26 : 0.16,
       time: this.runTime,
       aberration: Math.min(3, this.fx.aberration + (this.apocalypseActive ? 0.6 : 0) + cam.trauma * 1.6),
+      radial: Math.min(1, this.radialT * 2.2),
       bloomBoost: this.apocalypseActive ? 1.15 : 1,
       flash: this.fx.screenFlash.a > 0.01 ? this.fx.screenFlash : null,
     });
@@ -2156,15 +2229,18 @@ export class GameplayScene {
       out.fillRect(0, 0, CFG.VIEW_W, CFG.VIEW_H);
       if (this.themeT > 0) {
         const a = Math.min(1, Math.min(this.themeT, 0.6) * 2.5);
+        const lrn = this._learn();
         const hint = this.stage === 1 && !this._furnaceHintDone;
-        const ph = hint ? 34 : 24;
+        const ph = hint ? 64 : lrn ? 52 : 30;
         out.globalAlpha = a * 0.85;
-        drawPanel(out, CFG.VIEW_W / 2 - 90, 20, 180, ph, this.theme.color);
+        drawPanel(out, CFG.VIEW_W / 2 - 98, 16, 196, ph, this.theme.color);
         out.globalAlpha = a;
-        textC(out, 'SECTOR ' + this.stage + ' — ' + this.theme.name, CFG.VIEW_W / 2, 29, this.theme.color, 8, true);
-        textC(out, this.theme.desc, CFG.VIEW_W / 2, 39, '#e8e2f0', 6);
+        textC(out, 'SECTOR ' + this.stage + ' — ' + this.theme.name, CFG.VIEW_W / 2, 27, this.theme.color, 8, true);
+        textC(out, this.theme.desc, CFG.VIEW_W / 2, 40, '#e8e2f0', 6);
+        if (lrn) textC(out, lrn.label, CFG.VIEW_W / 2, 53, '#28f0e0', 6, true);
         if (hint) {
-          textC(out, 'KILL BESIDE THE TRAIN — [E] FURNACE BURST', CFG.VIEW_W / 2, 49, '#ffd040', 6, true);
+          textC(out, 'KILL BESIDE THE TRAIN', CFG.VIEW_W / 2, lrn ? 66 : 53, '#ffd040', 6, true);
+          textC(out, '[E] FURNACE BURST WHEN METER FULL', CFG.VIEW_W / 2, lrn ? 76 : 63, '#ffd040', 6, true);
           if (this.train.furnace >= 20) this._furnaceHintDone = true;
         }
         out.globalAlpha = 1;
@@ -3029,6 +3105,7 @@ export class GameplayScene {
         target: card.target === 'train' ? 'TRAIN' : null,
         tagline: card.tagline,
         evolved: !!card.req,
+        tilt: (this._cardLean || [])[i] || 0,
       });
     }
     if (!apoc) {
@@ -3058,11 +3135,33 @@ export class GameplayScene {
       ctx.globalAlpha = t;
       ctx.fillStyle = sel ? '#1c1626' : '#120e1c';
       ctx.fillRect(g.x, y, g.w, g.h);
+      const lean = (this._wpickLean || [])[i] || 0;
+      if (lean !== 0) {
+        // 3D-tilt parity: shear toward the cursor + cast an under-shadow
+        ctx.save();
+        ctx.globalAlpha = t * 0.35;
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(g.x - lean * 5 + 3, y + 6, g.w, g.h);
+        ctx.restore();
+        ctx.save();
+        ctx.translate(g.x + g.w / 2, y + g.h / 2);
+        ctx.transform(1, 0, lean * 0.085, 1 - Math.abs(lean) * 0.05, -(g.x + g.w / 2), -(y + g.h / 2));
+      }
       ctx.strokeStyle = sel ? w.color : '#3a3450';
       ctx.lineWidth = sel ? 2 : 1;
       ctx.strokeRect(g.x + 0.5, y + 0.5, g.w - 1, g.h - 1);
       if (sel) {
+        const fg = ctx.createLinearGradient(g.x, y, g.x + g.w, y + g.h);
+        fg.addColorStop(0, '#ff3b46'); fg.addColorStop(1, '#28f0e0');
+        ctx.strokeStyle = fg;
+        ctx.globalAlpha = t * (0.5 + 0.4 * Math.sin(this.runTime * 9));
+        ctx.lineWidth = 2.5;
+        ctx.strokeRect(g.x - 1.5, y - 1.5, g.w + 3, g.h + 3);
+        ctx.lineWidth = 1;
         ctx.globalAlpha = t * 0.22 + 0.1 * Math.sin(this.runTime * 8);
+        ctx.strokeStyle = w.color;
+        ctx.strokeRect(g.x + 0.5, y + 0.5, g.w - 1, g.h - 1);
+        ctx.globalAlpha = t;
         ctx.fillStyle = w.color;
         ctx.fillRect(g.x, y, g.w, g.h);
         ctx.globalAlpha = t;
@@ -3077,6 +3176,7 @@ export class GameplayScene {
       }
       textC(ctx, '[' + (i + 1) + ']', g.x + g.w / 2, y + g.h - 6, '#6a647c', 6);
       ctx.globalAlpha = 1;
+      if (lean !== 0) ctx.restore();
     }
     textC(ctx, 'CLICK A CARD  ·  OR PRESS 1 / 2 / 3', W / 2, H - 22, '#8a8a9c', 6);
   }
