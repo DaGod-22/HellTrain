@@ -40,6 +40,41 @@ export class Enemy {
     mod.apply(this);
   }
 
+  // BULLET-EATER: swallow a player shot, grow stronger instead of dying
+  absorb(dmg, ctx) {
+    this.growCount = (this.growCount || 0) + 1;
+    const heal = dmg * 0.8;
+    this.maxHp += heal * 0.4;
+    this.hp = Math.min(this.maxHp, this.hp + heal);
+    this.radius = Math.min(18, this.radius + 0.18);
+    this.scale = Math.min(2.2, (this.scale || 1) + 0.02);
+    this.dmg = Math.min(26, this.dmg + 0.35);
+    this.xp = (this.xp || 12) + 1;
+    if (ctx?.fx) {
+      ctx.fx.spawn({ x: this.x, y: this.y - 6, vx: 0, vy: -20, color: '#98e066',
+        life: 0.5, size: 2.5, endSize: 0.3 });
+      ctx.fx.damageText(this.x, this.y - this.radius - 6, 'ABSORB', '#98e066', { size: 6 });
+    }
+  }
+
+  // MIRROR WISP: bounce a player shot back at the shooter, weaker
+  reflect(proj, ctx) {
+    if (!ctx) return;
+    const p = ctx.player;
+    const ang = Math.atan2(p.y - this.y, p.x - this.x);
+    ctx.spawnProjectile({
+      x: this.x, y: this.y,
+      vx: Math.cos(ang) * 200, vy: Math.sin(ang) * 200,
+      life: 1.4, dmg: Math.min(14, Math.max(4, proj.dmg * 0.3)),
+      color: '#ffffff', sprite: proj.sprite, owner: 'enemy', size: 4,
+      family: 'mirror',
+    });
+    if (ctx.fx) {
+      ctx.fx.ring(this.x, this.y, 14, '#ffffff', 0.3, 2);
+      ctx.fx.damageText(this.x, this.y - this.radius - 6, 'REFLECT', '#ffffff', { size: 6 });
+    }
+  }
+
   update(dt, ctx) {
     if (!this.alive) {
       this.deathT -= dt;
@@ -170,6 +205,67 @@ export class Enemy {
         this.vx = Math.cos(ang) * speed;
         this.vy = Math.sin(ang) * speed;
       } else { this.vx = 0; this.vy = 0; }
+    } else if (this.ai === 'sweep') {
+      // MARKER ENEMY: telegraphs a long burning line, then blazes down it
+      this.sweepT = (this.sweepT === undefined) ? 2 + Math.random() * 1.5 : this.sweepT - dt;
+      if (this.sweepState === 'dash') {
+        // hold the dash heading; contact damage does the rest
+        if (this.aiT2 > 0) { this.aiT2 -= dt; }
+        else { this.sweepState = 'cool'; this.sweepT = 2.4 + Math.random(); this.vx = 0; this.vy = 0; }
+      } else if (this.sweepState === 'tele') {
+        this.vx = 0; this.vy = 0;
+        this.aiT2 -= dt;
+        if (this.aiT2 <= 0) {
+          // launch along the telegraphed line
+          const a = this.sweepAng;
+          this.sweepState = 'dash';
+          this.aiT2 = 0.55;
+          this.vx = Math.cos(a) * 340;
+          this.vy = Math.sin(a) * 340;
+          if (Math.random() < 0.6) ctx.fx.fire(this.x + Math.cos(a) * 10, this.y + Math.sin(a) * 10, '#ff7a33');
+        }
+      } else {
+        // cool/reposition: shuffle toward a firing solution
+        if (d > 120) {
+          const ang = Math.atan2(py - this.y, px - this.x);
+          this.vx = Math.cos(ang) * speed; this.vy = Math.sin(ang) * speed;
+        } else { this.vx = 0; this.vy = 0; }
+        if (this.sweepT <= 0 && d < 240) {
+          const ang = Math.atan2(py - this.y, px - this.x);
+          const L = 210;
+          this.sweepAng = ang;
+          this.sweepState = 'tele';
+          this.aiT2 = 0.85; // readable wind-up
+          ctx.telegraphs.push({ type: 'line', x: this.x, y: this.y,
+            x2: this.x + Math.cos(ang) * L, y2: this.y + Math.sin(ang) * L,
+            t: 0.85, dur: 0.85, color: '#ff5a33', w: 22 });
+        }
+      }
+    } else if (this.ai === 'eater') {
+      // BULLET-EATER: slow, relentless, grows with every shot it swallows
+      if (d > 1) {
+        const ang = Math.atan2(py - this.y, px - this.x);
+        this.vx = Math.cos(ang) * speed;
+        this.vy = Math.sin(ang) * speed;
+      } else { this.vx = 0; this.vy = 0; }
+      if (this.growCount > 0 && Math.random() < 0.3) {
+        ctx.fx.spawn({ x: this.x + rand(-6, 6), y: this.y - 4, vx: 0, vy: -14,
+          color: '#98e066', life: 0.4, size: 2, endSize: 0.2 });
+      }
+    } else if (this.ai === 'mirror') {
+      // MIRROR WISP: keeps its distance and bounces shots back
+      if (d < 110) {
+        const ang = Math.atan2(py - this.y, px - this.x);
+        this.vx = -Math.cos(ang) * speed;
+        this.vy = -Math.sin(ang) * speed;
+      } else if (d > 170) {
+        const ang = Math.atan2(py - this.y, px - this.x);
+        this.vx = Math.cos(ang) * speed * 0.7;
+        this.vy = Math.sin(ang) * speed * 0.7;
+      } else {
+        this.vx = Math.cos(this.animT * 0.7) * speed * 0.4;
+        this.vy = Math.sin(this.animT * 0.9) * speed * 0.4;
+      }
     } else { // fallback
       if (d > 1) {
         const ang = Math.atan2(py - this.y, px - this.x);

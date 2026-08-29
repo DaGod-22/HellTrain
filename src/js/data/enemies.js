@@ -56,21 +56,28 @@ export const ENEMIES = [
     desc: 'Burrows through starlight debris.' },
   { id: 'necro_conductor', name: 'Necro Conductor', hp: 90, dmg: 14, spd: 45, radius: 9, ai: 'summoner', xp: 22, sprite: 'summoner',
     desc: 'Summons lost souls endlessly.', summon: { id: 'lost_soul', cd: 3, count: 3, max: 12 } },
+  // ---- v1.4 new behaviours: readable, dodgeable, family-friendly ----
+  { id: 'ember_herald', name: 'Ember Herald', hp: 30, dmg: 14, spd: 42, radius: 8, ai: 'sweep', xp: 12, sprite: 'caster_fire',
+    desc: 'Marks a burning line — step off it before it blazes.' },
+  { id: 'slag_gobbler', name: 'Slag Gobbler', hp: 55, dmg: 8, spd: 30, radius: 9, ai: 'eater', xp: 16, sprite: 'blob',
+    desc: 'Eats your shots and grows. Deal with it first.' },
+  { id: 'mirror_wisp', name: 'Mirror Wisp', hp: 24, dmg: 6, spd: 85, radius: 6, ai: 'mirror', xp: 14, sprite: 'ghost',
+    desc: 'Bounces your shots back. Don\'t just hold the trigger.' },
 ];
 
 // Realm-specific roster overrides
 export const REALM_ROSTERS = {
   purgatory: ['lost_soul','crawler','wraithling','shadow_hound','station_caster','station_keeper','wraith_summoner','shadow_bat'],
-  infernal:  ['ash_brute','fire_caster','slime','ash_burrower','shadow_hound','firefly_swarm','wraith_summoner','station_keeper'],
+  infernal:  ['ash_brute','fire_caster','slime','ash_burrower','shadow_hound','firefly_swarm','wraith_summoner','station_keeper','ember_herald'],
   forgotten: ['lost_soul','station_caster','station_keeper','shadow_bat','void_sentinel','wraith_summoner','wraithling'],
-  forest:    ['crawler','shadow_hound','slime','lost_soul','wraithling','wraith_summoner','firefly_swarm'],
+  forest:    ['crawler','shadow_hound','slime','lost_soul','wraithling','wraith_summoner','firefly_swarm','slag_gobbler'],
   frozen:    ['slime','station_keeper','wraithling','crawler','void_sentinel','shadow_bat','firefly_swarm'],
-  desert:    ['ash_brute','fire_caster','slime','ash_burrower','shadow_hound','wraith_summoner'],
-  void:      ['void_sentinel','lost_soul','wraith_summoner','shadow_bat','station_caster','slime','wraithling'],
+  desert:    ['ash_brute','fire_caster','slime','ash_burrower','shadow_hound','wraith_summoner','ember_herald'],
+  void:      ['void_sentinel','lost_soul','wraith_summoner','shadow_bat','station_caster','slime','wraithling','mirror_wisp'],
   terminus:  ['ash_brute','void_sentinel','wraith_summoner','station_keeper','shadow_hound','fire_caster','wraithling','shadow_bat'],
-  dreadmarsh: ['marsh_lurker','vine_tangler','slime','crawler','lost_soul','wraith_summoner','shadow_bat','firefly_swarm'],
-  foundry: ['foundry_hammer','molten_slinger','ash_brute','fire_caster','ash_burrower','void_sentinel','station_keeper'],
-  starlight: ['star_wisp','void_reaver','comet_crawler','void_sentinel','necro_conductor','shadow_bat','wraithling','lost_soul'],
+  dreadmarsh: ['marsh_lurker','vine_tangler','slime','crawler','lost_soul','wraith_summoner','shadow_bat','firefly_swarm','slag_gobbler'],
+  foundry: ['foundry_hammer','molten_slinger','ash_brute','fire_caster','ash_burrower','void_sentinel','station_keeper','ember_herald'],
+  starlight: ['star_wisp','void_reaver','comet_crawler','void_sentinel','necro_conductor','shadow_bat','wraithling','lost_soul','mirror_wisp'],
 };
 
 // Elite modifiers

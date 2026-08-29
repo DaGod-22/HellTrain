@@ -79,16 +79,16 @@ const GRADE = {
 const SECTOR_THEMES = [
   { id: 'emberfall', name: 'EMBERFALL', color: '#ff7a33', tint: '#ff5a2040', ambient: 'ember', ambientN: 90,
     desc: 'Embers ride the wind and fire-things stalk the line.',
-    roster: ['fire_caster', 'molten_slinger', 'firefly_swarm', 'ash_brute', 'ash_burrower'] },
+    roster: ['fire_caster', 'molten_slinger', 'firefly_swarm', 'ash_brute', 'ember_herald'] },
   { id: 'frostline', name: 'FROSTLINE', color: '#7ec8ff', tint: '#7ec8ff33', ambient: 'snow', ambientN: 90,
     desc: 'A killing cold. Ice-things chill you to the bone.',
     roster: ['void_sentinel', 'shadow_bat', 'station_caster', 'crawler', 'comet_crawler'] },
   { id: 'eclipse', name: 'ECLIPSE', color: '#c07aff', tint: '#7a3aff44', ambient: 'spark', ambientN: 80,
     desc: 'The sun blinks out. Pale wisps drink the dark.',
-    roster: ['star_wisp', 'void_reaver', 'wraith_summoner', 'lost_soul', 'void_sentinel'] },
+    roster: ['star_wisp', 'void_reaver', 'wraith_summoner', 'mirror_wisp', 'void_sentinel'] },
   { id: 'overgrowth', name: 'OVERGROWTH', color: '#98e066', tint: '#4ad06a33', ambient: 'leaf', ambientN: 70,
     desc: 'Blooms strangle the rails. Spore-things bloom too.',
-    roster: ['slime', 'marsh_lurker', 'vine_tangler', 'firefly_swarm', 'ash_burrower'] },
+    roster: ['slime', 'marsh_lurker', 'vine_tangler', 'slag_gobbler', 'firefly_swarm'] },
 ];
 const themeOf = (stage) => SECTOR_THEMES[(stage - 1) % SECTOR_THEMES.length];
 
@@ -1763,6 +1763,67 @@ export class GameplayScene {
     if (!f) return;
     const scale = e.scale || 1;
     this._drawShadow(ctx, e.x, e.y + 6 * scale, 14 * scale);
+    // CLASS SILHOUETTE — one glance tells you what this thing does.
+    // Outline hues are picked to never match enemy bullet colours
+    // (bullets burn orange / glow violet; outlines are cool or pale).
+    if (e.alive) {
+      const r = (e.radius + 2) * scale;
+      ctx.lineWidth = 1.5;
+      const ring = (color) => { ctx.strokeStyle = color; ctx.beginPath(); ctx.arc(e.x, e.y, r, 0, TAU); ctx.stroke(); };
+      switch (e.ai) {
+        case 'chase': case 'split': ring('#d85870'); break;                    // grunt: dusty rose ring
+        case 'tank': {                                                         // tank: heavy steel hexagon
+          ctx.strokeStyle = '#9ab0c0'; ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const a = i / 6 * TAU + 0.52;
+            const px = e.x + Math.cos(a) * r, py = e.y + Math.sin(a) * r;
+            i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+          }
+          ctx.closePath(); ctx.stroke(); break;
+        }
+        case 'ranged': {                                                       // shooter: tall diamond
+          ctx.strokeStyle = '#7ac0d8'; ctx.beginPath();
+          ctx.moveTo(e.x, e.y - r - 2); ctx.lineTo(e.x + r, e.y);
+          ctx.lineTo(e.x, e.y + r + 2); ctx.lineTo(e.x - r, e.y);
+          ctx.closePath(); ctx.stroke(); break;
+        }
+        case 'swarm': {                                                        // swarm: three pale dots
+          ctx.fillStyle = '#e8e8c8';
+          for (let i = 0; i < 3; i++) {
+            const a = i / 3 * TAU + this.runTime * 2;
+            ctx.beginPath(); ctx.arc(e.x + Math.cos(a) * r, e.y + Math.sin(a) * r, 1.1, 0, TAU); ctx.fill();
+          } break;
+        }
+        case 'summoner': ring('#b0a0ff'); break;                               // summoner: pale violet ring
+        case 'burrower': {                                                     // burrower: broken ground arcs
+          ctx.strokeStyle = '#d8b088';
+          for (let i = 0; i < 3; i++) {
+            const a = i / 3 * TAU + 0.3;
+            ctx.beginPath(); ctx.arc(e.x, e.y, r + 1.5, a, a + 0.7); ctx.stroke();
+          } break;
+        }
+        case 'shield': {                                                       // shielded: front shield arc
+          ctx.strokeStyle = '#8ef0ff'; ctx.lineWidth = 2;
+          const fa = Math.atan2(this.player.y - e.y, this.player.x - e.x);
+          ctx.beginPath(); ctx.arc(e.x, e.y, r + 2.5, fa - 0.9, fa + 0.9); ctx.stroke(); break;
+        }
+        case 'fly': {                                                          // flier: wing ticks
+          ctx.strokeStyle = '#a8dce8';
+          ctx.beginPath();
+          ctx.moveTo(e.x - r, e.y - 2); ctx.lineTo(e.x - r - 4, e.y - 5);
+          ctx.moveTo(e.x + r, e.y - 2); ctx.lineTo(e.x + r + 4, e.y - 5);
+          ctx.stroke(); break;
+        }
+        case 'sweep': ring('#ff9a6a'); break;                                  // marker: ember ring
+        case 'eater': ring('#98e066'); break;                                  // eater: green maw ring
+        case 'mirror': {                                                       // mirror: white double ring
+          ctx.strokeStyle = '#f4f0ff'; ring('#f4f0ff');
+          ctx.beginPath(); ctx.arc(e.x, e.y, r - 3, 0, TAU); ctx.stroke(); break;
+        }
+        default: break;
+      }
+      ctx.lineWidth = 1;
+    }
     let img = f;
     if (e.freezeT > 0) img = A.hitFlash(f, '#9cd8ff');
     else if (e.flashT > 0) img = A.hitFlash(f, '#ffffff');
@@ -1788,16 +1849,69 @@ export class GameplayScene {
       ctx.fillStyle = e.eliteMod ? '#ffb020' : '#ff4d4d';
       ctx.fillRect(e.x - w / 2, y, w * pct, 2);
     }
-    // elite crown marker — readability at a glance
+    // elite crown marker — a DIFFERENT shape and colour per modifier, so a
+    // veteran reads the threat (and its answer) before it arrives
     if (e.alive && e.eliteMod) {
       const cy = e.y - (e.radius + 13) * (e.scale || 1);
-      ctx.fillStyle = '#ffb020';
-      ctx.beginPath();
-      ctx.moveTo(e.x - 5, cy + 4); ctx.lineTo(e.x, cy - 3); ctx.lineTo(e.x + 5, cy + 4);
-      ctx.closePath(); ctx.fill();
-      ctx.fillStyle = '#fff0a0';
-      ctx.fillRect(e.x - 6, cy + 4, 12, 1);
-      this._light(e.x, e.y, 26, '#ffb020', 0.4);
+      const crown = {
+        armoured:      { c: '#ffb020', kind: 'square' },
+        fast:          { c: '#8ef0ff', kind: 'chevron' },
+        giant:         { c: '#ff4d4d', kind: 'spikes' },
+        regenerating:  { c: '#7ae06a', kind: 'cross' },
+        teleporting:   { c: '#c07aff', kind: 'diamond' },
+        summoner:      { c: '#ff7ad0', kind: 'tri' },
+        enraged:       { c: '#ff7a33', kind: 'zig' },
+        void_touched:  { c: '#e8e2ff', kind: 'star' },
+      }[e.eliteMod] || { c: '#ffb020', kind: 'tri' };
+      ctx.fillStyle = crown.c;
+      ctx.strokeStyle = crown.c;
+      switch (crown.kind) {
+        case 'square':
+          ctx.fillRect(e.x - 4, cy - 2, 8, 6);
+          ctx.fillStyle = '#ffffff55'; ctx.fillRect(e.x - 4, cy - 2, 8, 2);
+          break;
+        case 'chevron':
+          ctx.lineWidth = 2; ctx.beginPath();
+          ctx.moveTo(e.x - 5, cy + 3); ctx.lineTo(e.x, cy - 3); ctx.lineTo(e.x + 5, cy + 3);
+          ctx.stroke(); ctx.lineWidth = 1;
+          break;
+        case 'spikes':
+          ctx.beginPath();
+          ctx.moveTo(e.x - 6, cy + 3); ctx.lineTo(e.x - 3, cy - 4); ctx.lineTo(e.x, cy + 1);
+          ctx.lineTo(e.x + 3, cy - 4); ctx.lineTo(e.x + 6, cy + 3);
+          ctx.closePath(); ctx.fill();
+          break;
+        case 'cross':
+          ctx.fillRect(e.x - 1.5, cy - 5, 3, 10);
+          ctx.fillRect(e.x - 5, cy - 1.5, 10, 3);
+          break;
+        case 'diamond':
+          ctx.beginPath();
+          ctx.moveTo(e.x, cy - 5); ctx.lineTo(e.x + 4, cy); ctx.lineTo(e.x, cy + 5); ctx.lineTo(e.x - 4, cy);
+          ctx.closePath(); ctx.fill();
+          break;
+        case 'tri':
+          ctx.beginPath();
+          ctx.moveTo(e.x - 5, cy + 4); ctx.lineTo(e.x, cy - 3); ctx.lineTo(e.x + 5, cy + 4);
+          ctx.closePath(); ctx.fill();
+          break;
+        case 'zig':
+          ctx.lineWidth = 2; ctx.beginPath();
+          ctx.moveTo(e.x - 5, cy + 2); ctx.lineTo(e.x - 2, cy - 2); ctx.lineTo(e.x + 1, cy + 2); ctx.lineTo(e.x + 5, cy - 3);
+          ctx.stroke(); ctx.lineWidth = 1;
+          break;
+        case 'star':
+          ctx.beginPath();
+          for (let i = 0; i < 10; i++) {
+            const a = -Math.PI / 2 + i * Math.PI / 5;
+            const rr = i % 2 ? 2 : 5;
+            const px = e.x + Math.cos(a) * rr, py = cy + Math.sin(a) * rr;
+            i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+          }
+          ctx.closePath(); ctx.fill();
+          break;
+      }
+      this._light(e.x, e.y, 26, crown.c, 0.4);
     }
   }
 
