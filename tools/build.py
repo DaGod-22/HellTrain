@@ -33,7 +33,17 @@ def load_payload() -> dict:
 
 def main() -> None:
     payload = load_payload()
-    order = payload["order"]
+    # Derive the module order: keep the existing order, drop removed files,
+    # append anything new (sorted for stability).
+    existing = [f for f in payload["order"] if (SRC / f).exists()]
+    known = set(existing)
+    fresh = sorted(
+        str(p.relative_to(SRC)).replace("\\", "/")
+        for p in SRC.rglob("*.js")
+        if str(p.relative_to(SRC)).replace("\\", "/") not in known
+    )
+    order = existing + fresh
+    payload["order"] = order
     sources = {}
     for f in order:
         p = SRC / f

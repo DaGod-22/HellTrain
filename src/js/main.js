@@ -13,15 +13,14 @@ import { AudioEngine } from './systems/audio.js';
 import { AUTH } from './systems/auth.js';
 
 import { GameplayScene } from './systems/gameplay.js';
-import { ShopScene as OldShopScene } from './ui/shop.js';
-import { CoinShopScene as OldCoinShopScene } from './ui/coinshop.js';
-import { MainMenuScene } from './ui/mainmenu.js';
+import { ShopScene } from './ui/shop.js';
+import { CoinShopScene } from './ui/coinshop.js';
 import { HomeScene } from './ui/home.js';
 import {
   MenuScene, WorldMapScene, TrainBaseScene, RunSummaryScene, PauseScene,
   AchievementsScene, LeaderboardScene, DailyRunScene, WeeklyChallengeScene,
   SettingsScene, ArsenalScene, ArmouryScene, RelicsScene,
-  ProfileScene, DailyRewardsScene, ShopScene, CoinShopScene,
+  ProfileScene, DailyRewardsScene,
 } from './ui/menu.js';
 
 async function boot() {
@@ -70,8 +69,9 @@ async function boot() {
   }
   engine.save = save;
 
-  // Scenes — AAA GOD LEVEL
-  engine.addScene('menu', new HomeScene(engine)); // homescreen with profile icon top-right
+  // Scenes — every page speaks the same UI language (ui/kit.js)
+  engine.addScene('menu', new HomeScene(engine));   // dashboard homescreen
+  engine.addScene('hub', new MenuScene(engine));    // "MORE" page with the rest
   engine.addScene('menuClassic', new MenuScene(engine));
   engine.addScene('worldmap', new WorldMapScene(engine));
   engine.addScene('worldMap', new WorldMapScene(engine));
@@ -91,12 +91,8 @@ async function boot() {
   engine.addScene('arsenal', new ArsenalScene(engine));
   engine.addScene('armoury', new ArmouryScene(engine));
   engine.addScene('relics', new RelicsScene(engine));
-  engine.addScene('shop', new ShopScene(engine));
-  engine.addScene('shopOld', new OldShopScene(engine));
-  engine.addScene('coinshop', new CoinShopScene(engine));
-  engine.addScene('coinShop', new CoinShopScene(engine));
-  engine.addScene('coinShopOld', new OldCoinShopScene(engine));
-  engine.addScene('characterSelect', new MainMenuScene(engine));
+  engine.addScene('shop', new ShopScene(engine));        // the Forge (permanent tracks + skins)
+  engine.addScene('coinShop', new CoinShopScene(engine)); // coin shop (fixed-price goods)
   engine.addScene('profile', new ProfileScene(engine));
 
   if (typeof globalThis !== 'undefined') globalThis.__ENGINE__ = engine;

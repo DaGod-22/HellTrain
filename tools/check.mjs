@@ -121,7 +121,11 @@ function makeCtx(canvas) {
     createImageData(w, h) { return px(w, h); },
     getImageData(x, y, w, h) { return px(w, h); },
     putImageData() {},
-    measureText(s) { return { width: String(s ?? '').length * 6 }; },
+    measureText(s) {
+      // rough width that scales with the current font size, like a real font
+      const px2 = parseFloat(String(ctx.font)) || 10;
+      return { width: String(s ?? '').length * px2 * 0.6 };
+    },
     beginPath() {}, closePath() {}, moveTo() {}, lineTo() {}, arc() {}, arcTo() {},
     ellipse() {}, rect() {}, roundRect() {}, quadraticCurveTo() {}, bezierCurveTo() {},
     fill() {}, stroke() {}, clip() {}, save() {}, restore() {},
