@@ -106,3 +106,23 @@ Ground rules kept in mind throughout: one self-contained page, no gambling (ever
 23. **Unskippable voice tutorial.** A narrated walkthrough veterans must replay every run, with no mute. The first 30 seconds belong to playing, not a lecture.
 24. **Cloud-only saves.** The game phones home to verify progress. A single file that loses your save offline defeats its own reason to exist.
 25. **Direct pay-to-win upgrades.** Real-money damage boosts in the Forge. No dice, so "not gambling" — but worse: the scoreboard becomes a receipt.
+
+---
+
+# Where v1.4 already falls short — 15 real parts that need work
+
+26. **Enemy sprites recycle.** Ghost sprite for Lost Soul/Star Wisp/Mirror Wisp; blob for Slime/Marsh Lurker/Slag Gobbler. Outlines carry identity; the base art doesn't.
+27. **Elite pack hints under-report.** A multi-elite spawn banner prints only the last mod's hint — warned about SWIFT, charged by ARMORED.
+28. **The train is a stat stick.** Follows, buffs, shows a health bar, never creates a combat decision; pick-2 carriages barely register in-run.
+29. **Waypoints are walk-to-circle buffs.** No risk, no decision, no penalty for skipping. Free loot with extra steps.
+30. **Difficulty is numbers-only.** Six settings, one multiplier each (HP/damage). Zero new behaviors or rules.
+31. **Sectors 2–3 are the same fight, longer.** 120→180→240s with no new content; patience tax, not escalation.
+32. **Energy gates PLAY.** 5 per run, 20s regen — an idle-game holdover that punishes engaged players; legacy saves start at 100.
+33. **Audio is one thin layer.** Two coexisting audio systems; all weapon sounds ride four synth tones; sectors have no music identity.
+34. **Reroll/banish are too rare to matter.** One each per run, no way to earn more; the interesting card tools go unused.
+35. **Random weapon grants remove agency.** Level%4 and cap-overflow hand out lottery weapons with a banner — against the previewed-rewards rule.
+36. **Offline players hit dead menus.** Leaderboards/weekly/profile login are shells for services that don't exist locally; no honest offline state.
+37. **The shops blur together.** Forge vs Coin Shop vs shard sinks overlap; currency purpose is unclear, shards have almost nothing to buy.
+38. **Boss fights are open-field kiting.** One cycle skeleton for all realms; no cover, no arena identity, subtle signature tells.
+39. **No build view mid-run.** Pause = resume/settings/quit; owned cards, weapon levels and mastery are invisible until death.
+40. **Gameplay has no touch controls.** Menus are thumb-friendly; the run still demands a keyboard.
