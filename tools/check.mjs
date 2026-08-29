@@ -382,6 +382,33 @@ try {
       if (E._error) fail('season settle errored: ' + E._error.message);
       ok('season settle OK — offline / empty board degrade to null, monthKey YYYY-MM');
 
+      // ---- v1.7.1: home redesign — steel dock, throttle lever, grid menu ----
+      E._error = null;
+      E.setScene('menu', { save: E.save });
+      G.__pump(8);
+      if (E._error) fail('redesigned home errored: ' + E._error.message);
+      const home2 = E.current;
+      if (typeof home2.layout !== 'function') fail('home has no layout()');
+      const Lh = home2.layout();
+      if (!Lh.throttle) fail('home layout has no throttle lever');
+      if (!Lh.tabs || Lh.tabs.length !== 5) fail(`home dock should have 5 tabs, has ${Lh.tabs && Lh.tabs.length}`);
+      if (Lh.tabs[2].act !== 'battle') fail('center dock tab is not BATTLE');
+      const acts = Lh.tabs.map(t => t.act).join(',');
+      if (acts !== 'trainBase,arsenal,battle,shop,coinShop') fail('dock tab mapping wrong: ' + acts);
+      const cellsH = home2._gridCells();
+      if (cellsH.length !== 12) fail(`grid menu should hold 12 stations, has ${cellsH.length}`);
+      home2._gridOpen = true;
+      G.__pump(6);
+      if (E._error) fail('grid menu render errored: ' + E._error.message);
+      home2._gridOpen = false;
+      home2._pullThrottle(); // lever animates ~0.38s, then the run starts
+      if (!home2._thr.pulling) fail('throttle lever did not engage');
+      G.__pump(40);
+      if (E._error) fail('throttle start errored: ' + E._error.message);
+      if (E.current === home2) fail('throttle lever never started the run');
+      G.__pump(10);
+      ok('home redesign OK — 5-tab steel dock, throttle lever starts the run, 12-station grid menu');
+
       // ---- new weapon mechanics: charge / turret / echo, through evolution ----
       E._error = null;
       E.setScene('gameplay', { save: E.save, realmId: 'purgatory', stage: 1 });

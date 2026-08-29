@@ -138,3 +138,10 @@ Ground rules kept in mind throughout: one self-contained page, no gambling (ever
 - In-run shard economy fixed: shard drops used to evaporate at run end; now banked. Elite +12, chest +8, lieutenant +40, boss +60 — every payout banner is exact. HUD shows the shard count.
 - Ultimate is manual ([Q] / touch ring) with a ready prompt; skins got per-skin plumes, spark trails, tinted furnace bursts.
 - New IDENTITY page: wear owned avatars + season frames (won, never sold).
+
+## v1.7.1 — home screen redesign (DONE)
+- Home rebuilt as a dark industrial depot: smoky charcoal backdrop with crimson furnace glow + embers (bright orange lava gradient is gone).
+- Riveted-steel plate system (steelPlate/steelButton/rivet helpers): top strip, sector nameplate, realm window frame, goal rows, dock — all riveted iron with rust mottling.
+- The big red PLAY button is now a throttle lever: steel plate, pulsing crimson signal lamp, lever quadrant (STOP->FULL), pull animation ~0.38s then the run starts.
+- Bottom steel dock with 5 tabs: TRAIN / ARSENAL / BATTLE / FORGE / SHOP; center BATTLE is a raised medallion with a glowing, slowly turning locomotive wheel + fire licks.
+- Every former sidebar tile (relics, train base, daily run, world map, boards, identity, awards, rewards, chests w/ badge, settings, all lines, coin shop) now lives in a collapsible 12-cell grid menu behind the top-right MENU button.
