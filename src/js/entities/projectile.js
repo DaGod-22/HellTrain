@@ -84,10 +84,23 @@ export class Projectile {
         if (!e.alive || this.hitIds.has(e._id)) continue;
         if (dist(this.x, this.y, e.x, e.y) > this.size + e.radius) continue;
         this.hitIds.add(e._id);
+        // bullet-eater: absorbs shots instead of taking damage — deal with it first
+        if (e.ai === 'eater') {
+          e.absorb(this.dmg, ctx);
+          this.alive = false;
+          return;
+        }
+        // mirror wisp: reflects the shot back at the shooter
+        if (e.ai === 'mirror' && !this.reflected && Math.random() < 0.5) {
+          this.alive = false;
+          e.reflect(this, ctx);
+          return;
+        }
         ctx.dealDamage(e, this.dmg, {
           family: this.family, x: this.x, y: this.y, knockback: this.knockback,
           slow: this.slow, slowDur: this.slowDur, burn: this.burn,
           angle: Math.atan2(this.vy, this.vx), lifesteal: this.lifesteal,
+          weaponId: this.weaponId,
         });
         if (this.explode) {
           ctx.spawnExplosion(this.x, this.y, this.explodeRadius, this.dmg * 0.7, this.family);
@@ -100,7 +113,7 @@ export class Projectile {
       if (ctx.boss && ctx.boss.alive && !this.hitIds.has('boss') &&
           dist(this.x, this.y, ctx.boss.x, ctx.boss.y) < this.size + ctx.boss.radius) {
         this.hitIds.add('boss');
-        ctx.dealDamage(ctx.boss, this.dmg, { family: this.family, x: this.x, y: this.y, boss: true });
+        ctx.dealDamage(ctx.boss, this.dmg, { family: this.family, x: this.x, y: this.y, boss: true, weaponId: this.weaponId });
         if (this.explode) { ctx.spawnExplosion(this.x, this.y, this.explodeRadius, this.dmg * 0.7, this.family); this.alive = false; return; }
         if (this.pierceLeft <= 0) { this.alive = false; return; }
         this.pierceLeft -= 1;

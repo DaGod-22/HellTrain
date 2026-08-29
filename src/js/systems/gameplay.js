@@ -23,6 +23,8 @@ import { checkSynergies } from '../data/upgrades_bridge.js';
 import { WEAPONS, findWeapon } from '../data/weapons.js';
 import { addCoins, saveSave } from '../core/save.js';
 import { SOUNDS } from '../core/sound.js';
+import { masteryMult } from '../data/mastery.js';
+import { bumpGoal } from '../data/goals.js';
 import { drawCard, drawPanel, drawBar, drawIcon, text, textC } from '../ui/widgets.js';
 
 const AMBIENT = {
@@ -67,6 +69,82 @@ function countCaps(owned){
 const GRADE = {
   purgatory: '#6a5ce0', infernal: '#ff5a20', forgotten: '#8a9ad0', forest: '#4ad06a',
   frozen: '#7ac0ff', desert: '#ffc060', void: '#a05cff', terminus: '#ffd060', phantom: '#c07aff',
+};
+
+// ================================================================
+// SECTOR THEMES — every sector of a run announces itself in the
+// first seconds: palette shift, drifting ambience, and a themed
+// enemy mix. Cycles by stage: 1 EMBERFALL, 2 FROSTLINE, 3 ECLIPSE...
+// ================================================================
+const SECTOR_THEMES = [
+  { id: 'emberfall', name: 'EMBERFALL', color: '#ff7a33', tint: '#ff5a2040', ambient: 'ember', ambientN: 90,
+    desc: 'Embers ride the wind and fire-things stalk the line.',
+    roster: ['fire_caster', 'molten_slinger', 'firefly_swarm', 'ash_brute', 'ash_burrower'] },
+  { id: 'frostline', name: 'FROSTLINE', color: '#7ec8ff', tint: '#7ec8ff33', ambient: 'snow', ambientN: 90,
+    desc: 'A killing cold. Ice-things chill you to the bone.',
+    roster: ['void_sentinel', 'shadow_bat', 'station_caster', 'crawler', 'comet_crawler'] },
+  { id: 'eclipse', name: 'ECLIPSE', color: '#c07aff', tint: '#7a3aff44', ambient: 'spark', ambientN: 80,
+    desc: 'The sun blinks out. Pale wisps drink the dark.',
+    roster: ['star_wisp', 'void_reaver', 'wraith_summoner', 'lost_soul', 'void_sentinel'] },
+  { id: 'overgrowth', name: 'OVERGROWTH', color: '#98e066', tint: '#4ad06a33', ambient: 'leaf', ambientN: 70,
+    desc: 'Blooms strangle the rails. Spore-things bloom too.',
+    roster: ['slime', 'marsh_lurker', 'vine_tangler', 'firefly_swarm', 'ash_burrower'] },
+];
+const themeOf = (stage) => SECTOR_THEMES[(stage - 1) % SECTOR_THEMES.length];
+
+// ================================================================
+// ROUTE CARDS — shown after each sector. Every effect is written
+// out with exact numbers BEFORE you choose. No hidden rolls.
+// ================================================================
+const ROUTE_POOL = [
+  { id: 'gold_rush', name: 'GOLD RUSH', color: '#ffe066', icon: 'coinbag',
+    desc: ['+80% coins from kills', 'enemies 15% faster'],
+    mods: { coinMul: 1.8, spdMul: 1.15 } },
+  { id: 'blood_moon', name: 'BLOOD MOON', color: '#ff5a5a', icon: 'skull',
+    desc: ['elites arrive 35% faster', '+50% XP from all kills'],
+    mods: { eliteMul: 0.65, xpMul: 1.5 } },
+  { id: 'safe_line', name: 'SAFE LINE', color: '#7ae06a', icon: 'heart',
+    desc: ['heal 60% of max HP now', 'coins from kills −25%'],
+    mods: { heal: 0.6, coinMul: 0.75 } },
+  { id: 'overcharge', name: 'OVERCHARGE', color: '#ff9033', icon: 'bolt',
+    desc: ['+25% damage dealt', 'enemies +15% HP'],
+    mods: { dmgMul: 1.25, hpMul: 1.15 } },
+  { id: 'ghost_march', name: 'GHOST MARCH', color: '#c07aff', icon: 'ghost',
+    desc: ['enemies 20% slower', 'XP from kills −20%'],
+    mods: { spdMul: 0.8, xpMul: 0.8 } },
+  { id: 'scavenger', name: 'SCAVENGER LINE', color: '#8ef0ff', icon: 'gift',
+    desc: ['a chest drops every 35s', 'coins from kills −10%'],
+    mods: { chestFast: true, coinMul: 0.9 } },
+];
+// deterministic pick of 3 distinct routes per sector
+function routeOptions(stage, seed) {
+  let s = (seed ^ (stage * 0x9E3779B1)) >>> 0;
+  const rnd = () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const pool = ROUTE_POOL.slice();
+  const out = [];
+  while (out.length < 3 && pool.length) out.push(pool.splice(Math.floor(rnd() * pool.length), 1)[0]);
+  return out;
+}
+
+// CHALLENGE DOORS — optional, exact reward printed on the door itself
+const CHALLENGE_TYPES = [
+  { id: 'survive', name: 'THE LONG MINUTE', icon: 'shield', reward: 350,
+    goal: 'SURVIVE 30 SECONDS', rewardText: '350 COINS' },
+  { id: 'elites', name: 'HEAD HUNT', icon: 'crown', reward: 500,
+    goal: 'SLAY 3 ELITES', rewardText: '500 COINS' },
+  { id: 'core', name: 'SHIELD CORE', icon: 'target', reward: 400,
+    goal: 'BREAK THE SHIELD CORE', rewardText: '400 COINS' },
+];
+// elite modifier -> the one-line hint shown when it spawns
+const ELITE_HINTS = {
+  armoured: 'ARMORED ELITE — shatter its shell first!',
+  fast: 'SWIFT ELITE — it will close the gap fast!',
+  giant: 'COLOSSAL ELITE — slow, but hits like a train!',
+  regenerating: 'REGENERATING ELITE — burst it down or lose it!',
+  teleporting: 'PHASING ELITE — it blinks across the field!',
+  summoner: 'HIVE ELITE — it keeps calling reinforcements!',
+  enraged: 'ENRAGED ELITE — furious and twice as mean!',
+  void_touched: 'VOID ELITE — fire will not burn it!',
 };
 
 export class GameplayScene {
@@ -159,6 +237,20 @@ export class GameplayScene {
     this.apocalypseActive = false;
     this._synergiesFired = {};
 
+    // ---- v1.4: multi-sector runs ----
+    this.maxSectors = 3;
+    this.theme = themeOf(this.stage);
+    this.routeMods = null;          // chosen route modifiers for this sector
+    this.routeName = null;
+    this.routeCards = null;         // overlay: pick next sector's route
+    this.transition = 0;            // sector-clear cinematic timer
+    this.dmgByWeapon = {};          // weaponId -> damage dealt (run summary)
+    this.door = null;               // optional challenge door in the field
+    this.doorT = 24;
+    this.challenge = null;          // active challenge state
+    this.challengesWon = 0;
+    this.themeT = 6;                // how long the theme banner stays up
+
     // veteran perma: start with extra levels
     for (let i = 0; i < (this.player.startLevelBonus || 0); i++) {
       this.player.level += 1; this.pendingLevelUps += 1;
@@ -167,7 +259,7 @@ export class GameplayScene {
     this.camera.x = this.player.x; this.camera.y = this.player.y;
     this._spawnAmbient();
     if (this.pendingLevelUps > 0) this._openCards();
-    this.fx.banner(this.player.x, this.player.y - 40, findRealm(this.realmId).name.toUpperCase(), '#ffe066');
+    this.fx.banner(this.player.x, this.player.y - 40, findRealm(this.realmId).name.toUpperCase() + ' — ' + this.theme.name, this.theme.color);
   }
   exit() {}
 
@@ -310,6 +402,14 @@ export class GameplayScene {
     const p = this.player;
     const { dmg, crit } = p.rollDamage(amount, target);
     let final = dmg;
+    // WEAPON MASTERY — the more kills a weapon family lands, the harder it hits
+    if (opts.family) {
+      const mm = masteryMult(this.save?.familyKills?.[opts.family] || 0);
+      if (mm > 1) final *= mm;
+    }
+    // BOSS PHASE-CHANGE VULNERABILITY — the promised punish window
+    const vulnerable = target.vulnT > 0;
+    if (vulnerable) final *= 1.5;
     // mid-sector beacon buff (from waypoint events)
     if (this.buffs.dmgT > 0) final *= this.buffs.dmgMult;
     // status riders from the build
@@ -327,18 +427,39 @@ export class GameplayScene {
     }
     const dealt = target.takeDamage(final, rider) ?? final;
     this.runStats.damageDealt += dealt;
+    // per-weapon damage bookkeeping (run summary breakdown)
+    {
+      const key = opts.weaponId || opts.family || 'other';
+      this.dmgByWeapon[key] = (this.dmgByWeapon[key] || 0) + dealt;
+    }
 
     // feedback
-    const big = final > p.maxHp * 0.4 || crit;
+    const big = final > p.maxHp * 0.4 || crit || vulnerable;
     if (!opts.small || crit) {
       this.fx.damageText(target.x + rand(-4, 4), target.y - (target.radius || 8) - 4,
-        Math.round(final) + (crit ? '!' : ''), crit ? '#ffe066' : '#ffffff',
+        Math.round(final) + (crit ? '!' : ''), vulnerable && !crit ? '#8ef0ff' : crit ? '#ffe066' : '#ffffff',
         { size: crit ? 10 : 8, crit });
     }
     this.fx.sparks(target.x, target.y, crit ? '#ffe066' : '#ffd0a0', crit ? 6 : 3,
       opts.angle ?? rand(0, TAU), 0.8, crit ? 160 : 90);
     if (big) { this.time.hit(crit ? 0.05 : 0.03); this.camera.shake(crit ? 0.2 : 0.1); }
-    if (opts.family === 'fire') this.fx.fire(target.x, target.y, '#ff7a33');
+    // per-family impact feel: each element lands differently
+    switch (opts.family) {
+      case 'fire': this.fx.fire(target.x, target.y, '#ff7a33'); break;
+      case 'ice': this.fx.shard(target.x, target.y, '#a8d4f4', 5); break;
+      case 'void': this.fx.ring(target.x, target.y, 12, '#c07aff', 0.25, 2); break;
+      case 'lightning': this.fx.sparks(target.x, target.y, '#fff066', 4, rand(0, TAU), 0.5, 200); break;
+      case 'saw': case 'orbital': this.fx.sparks(target.x, target.y, '#d0d4e8', 4, (opts.angle ?? 0) + Math.PI * 0.75, 0.5, 140); break;
+      case 'plasma': this.fx.flash(target.x, target.y, '#2ff0ff', 0.06, 8); break;
+      default: break;
+    }
+    try {
+      if (big && this.runTime - (this._lastHitSfx || -1) > 0.09) {
+        this._lastHitSfx = this.runTime;
+        const sfxMap = { fire: 'fire', ice: 'ice', lightning: 'lightning', void: 'void', plasma: 'ice', orbital: 'orbital', saw: 'orbital', explosive: 'fire', tech: 'lightning' };
+        SOUNDS.shoot(sfxMap[opts.family] || 'fire');
+      }
+    } catch {}
     if (p.lifesteal > 0 && !opts.byTrain) p.heal(dealt * p.lifesteal);
     if (opts.lifesteal) p.heal(dealt * opts.lifesteal);
 
@@ -365,21 +486,31 @@ export class GameplayScene {
     this.gameStats.kills++; this.runStats.kills++;
     this.runStats.bestCombo = Math.max(this.runStats.bestCombo, p.combo);
 
+    // WEAPON MASTERY + DAILY GOALS — every kill feeds the long game
+    try {
+      this.save.familyKills = this.save.familyKills || {};
+      const fam = opts.family || (opts.weaponId ? findWeapon(opts.weaponId)?.family : null);
+      if (fam) this.save.familyKills[fam] = (this.save.familyKills[fam] || 0) + 1;
+      bumpGoal(this.save, 'kills', 1);
+      if (e.eliteMod) { bumpGoal(this.save, 'elites', 1); if (this.challenge?.type === 'elites') this._challengeEliteKill(); }
+    } catch {}
+
     // visuals
     this.fx.explosion(e.x, e.y, 'impact', (e.radius || 7) / 9, { light: 0.6, speed: 26 });
     this.fx.blood(e.x, e.y, '#7a1010', e.giant ? 14 : 7);
     this.fx.decal(e.x, e.y, (e.radius || 7) * 0.8, '#2a0808', 10);
     this.fx.shard(e.x, e.y, '#ffd0a0', 4);
 
-    // loot
+    // loot (route card coins modifier applies here)
+    const routeCoin = this.routeMods?.coinMul ?? 1;
     const eliteMul = e.eliteMod ? 4 : 1;
-    const coinBase = Math.max(1, Math.round((e.xp || 4) * 0.12 * eliteMul * (1 + (this.train.lootBonus || 0)) * (this.player.coinMult || 1)));
+    const coinBase = Math.max(1, Math.round((e.xp || 4) * 0.12 * eliteMul * routeCoin * (1 + (this.train.lootBonus || 0)) * (this.player.coinMult || 1)));
     const coinDrops = Math.min(4, 1 + Math.floor(coinBase / 6));
     for (let i = 0; i < coinDrops; i++) {
       this.pickups.push(new Pickup('coin', e.x + rand(-5, 5), e.y + rand(-5, 5), Math.ceil(coinBase / coinDrops)));
     }
     const xpType = e.eliteMod || e.giant ? 'xpBig' : 'xp';
-    this.pickups.push(new Pickup(xpType, e.x, e.y, (e.xp || 4) * (this.difficulty.xpMult || 1)));
+    this.pickups.push(new Pickup(xpType, e.x, e.y, Math.round((e.xp || 4) * (this.routeMods?.xpMul ?? 1) * (this.difficulty.xpMult || 1))));
     if (e.eliteMod) {
       this.gameStats.elites++;
       for (let i = 0; i < 3; i++) this.pickups.push(new Pickup('shard', e.x + rand(-6, 6), e.y + rand(-6, 6), 1));
@@ -409,6 +540,7 @@ export class GameplayScene {
     if (this.bossDefeated) return;
     this.bossDefeated = true;
     this.gameStats.bosses++;
+    try { bumpGoal(this.save, 'boss', 1); } catch {}
     this.time.slowmo(1.6, 0.25);
     this.camera.shake(1);
     this.fx.explosion(b.x, b.y, 'explFire', 4, { lightColor: '#ffe066' });
@@ -632,6 +764,167 @@ export class GameplayScene {
   }
 
   // ================================================================
+  // ROUTE CARDS — the fork between sectors. Exact effects, no rolls.
+  // ================================================================
+  _openRouteCards() {
+    this._ended = false;             // sector done, run continues
+    this.magnetAll = true; this._magnetT = 1.6;   // scoop up loose coins
+    this.routeCards = { opts: routeOptions(this.stage + 1, this.runSeed), t: 0, idx: -1 };
+    this.time.slowmo(1.2, 0.4);
+    try { SOUNDS.chest(); } catch {}
+  }
+  _routeGeometry() {
+    const n = this.routeCards.opts.length;
+    const w = 118, h = 128, gap = 10;
+    const total = n * w + (n - 1) * gap;
+    const x0 = (CFG.VIEW_W - total) / 2;
+    const y = 92;
+    return this.routeCards.opts.map((_, i) => ({ x: x0 + i * (w + gap), y, w, h }));
+  }
+  _updateRouteCards() {
+    const input = this.input;
+    const mx = input.mouse.x, my = input.mouse.y;
+    const geo = this._routeGeometry();
+    this.routeCards.idx = -1;
+    for (let i = 0; i < geo.length; i++) {
+      const g = geo[i];
+      if (mx >= g.x && mx <= g.x + g.w && my >= g.y && my <= g.y + g.h) this.routeCards.idx = i;
+    }
+    for (let i = 0; i < geo.length; i++) {
+      if (input.wasPressed('Digit' + (i + 1)) || input.wasPressed('Numpad' + (i + 1))) { this._pickRoute(i); return; }
+    }
+    if (input.wasPressed('ArrowRight')) this.routeCards.idx = Math.min(geo.length - 1, (this.routeCards.idx < 0 ? 0 : this.routeCards.idx + 1));
+    if (input.wasPressed('ArrowLeft')) this.routeCards.idx = Math.max(0, (this.routeCards.idx < 0 ? geo.length - 1 : this.routeCards.idx - 1));
+    if (input.wasPressed('Enter') || input.wasPressed('Space')) {
+      if (this.routeCards.idx >= 0) { this._pickRoute(this.routeCards.idx); return; }
+    }
+    if (input.mouse.justDown && this.routeCards.idx >= 0) this._pickRoute(this.routeCards.idx);
+  }
+  _pickRoute(i) {
+    const pick = this.routeCards.opts[i];
+    if (!pick) return;
+    this.routeCards = null;
+    this.routeMods = pick.mods;
+    this.routeName = pick.name;
+    this.transition = 2.0;
+    this.fx.banner(this.player.x, this.player.y - 56, 'SECTOR ' + this.stage + ' CLEARED', '#ffe066');
+    this.fx.explosion(this.player.x, this.player.y, 'explHoly', 2, { lightColor: pick.color });
+    try { SOUNDS.levelup(); } catch {}
+  }
+  _nextSector() {
+    // apply the chosen route
+    const m = this.routeMods || {};
+    if (m.heal) this.player.heal(this.player.maxHp * m.heal);
+    if (m.dmgMul) this.player.atkDmg *= m.dmgMul;
+    this.stage += 1;
+    this.gameStats.sectors = this.stage;
+    // wipe the field
+    for (const e of this.enemies) { if (e.alive) { e.alive = false; e.deathT = 0; } }
+    this.enemies.length = 0;
+    this.projectiles.length = 0;
+    this.pickups.length = 0;
+    this.telegraphs.length = 0;
+    this.delayed.length = 0;
+    this.holes.length = 0; this.meteors.length = 0; this.flames.length = 0;
+    this.bombs.length = 0; this.pools.length = 0;
+    // fresh ground for the new sector
+    this.world = new World(this.runSeed ^ hashStr(this.realmId + this.stage), this.realmId, this.difficulty);
+    const sp = this.world.playerSpawn;
+    this.player.x = sp.x; this.player.y = sp.y;
+    this.train.x = sp.x - 90; this.train.y = sp.y + 26;
+    this.camera.x = sp.x; this.camera.y = sp.y;
+    // sector clock + director
+    this.runTime = 0;
+    this.sectorDuration = 120 + (this.stage - 1) * 60;
+    this.sectorTimeLeft = this.sectorDuration;
+    this._sectorWarned30 = false; this._sectorWarned10 = false;
+    this.director = { t: 0, wave: 0, nextWave: 3, budget: 0, eliteT: 45 * (m.eliteMul || 1), chestT: m.chestFast ? 35 : 38 };
+    this.boss = null; this.bossSpawned = false; this.bossDefeated = false;
+    this.stopCard = 1.4;
+    // new theme
+    this.theme = themeOf(this.stage);
+    this.themeT = 6;
+    this._spawnAmbient();
+    this.door = null; this.doorT = 24; this.challenge = null;
+    this.fx.flash(this.player.x, this.player.y, '#ffffff', 0.3);
+    this.fx.banner(this.player.x, this.player.y - 40, this.theme.name, this.theme.color);
+    this.fx.screenTint(this.theme.color, 0.35);
+    this.camera.shake(0.4);
+  }
+
+  // ================================================================
+  // CHALLENGE DOORS — optional, exact reward printed before entering
+  // ================================================================
+  _updateDoor(dt) {
+    if (this.challenge) { this._updateChallenge(dt); return; }
+    if (this.door) {
+      const d = this.door;
+      d.t += dt;
+      // entered?
+      if (dist(this.player.x, this.player.y, d.x, d.y) < 14) this._startChallenge(d);
+      return;
+    }
+    this.doorT -= dt;
+    if (this.doorT <= 0 && this.director.t > 8 && !this.boss) {
+      const a = rand(0, TAU);
+      const px = this.player.x + Math.cos(a) * 110;
+      const py = this.player.y + Math.sin(a) * 110;
+      // pick the door type deterministically from the run seed
+      let s = (this.runSeed ^ (this.stage * 0x85EB)) >>> 0;
+      s = (s ^ (s << 13)) >>> 0; s = (s ^ (s >>> 17)) >>> 0; s = (s ^ (s << 5)) >>> 0;
+      const type = CHALLENGE_TYPES[s % CHALLENGE_TYPES.length];
+      this.door = { x: px, y: py, type, t: 0 };
+      this.fx.ring(px, py, 40, '#ffe066', 0.6, 3);
+      this.fx.banner(this.player.x, this.player.y - 50, 'A CHALLENGE DOOR OPENED', '#ffe066');
+    }
+  }
+  _startChallenge(d) {
+    const type = d.type;
+    this.challenge = { type: type.id, t: 30, need: 3, done: 0, reward: type.reward, name: type.name };
+    if (type.id === 'core') {
+      const e = this.spawnEnemy('void_sentinel', d.x + 20, d.y + 10);
+      if (e) {
+        this._applyEliteMod(e, 'armoured');
+        e.hp *= 2.2; e.maxHp = e.hp;
+        e.challengeCore = true;
+        this.challenge.core = e;
+      }
+    }
+    this.door = null;
+    this.fx.flash(this.player.x, this.player.y, '#ffe066', 0.25);
+    this.fx.banner(this.player.x, this.player.y - 52, type.name.toUpperCase() + ': ' + type.goal, '#ffe066');
+    try { SOUNDS.boss(); } catch {}
+  }
+  _updateChallenge(dt) {
+    const c = this.challenge;
+    if (c.type === 'survive') {
+      c.t -= dt;
+      if (c.t <= 0) this._completeChallenge();
+    } else if (c.type === 'elites') {
+      // counted in _onKill via _challengeEliteKill
+    } else if (c.type === 'core') {
+      if (!c.core || !c.core.alive) this._completeChallenge();
+    }
+  }
+  _challengeEliteKill() {
+    const c = this.challenge;
+    if (!c || c.type !== 'elites') return;
+    c.done++;
+    if (c.done >= c.need) this._completeChallenge();
+    else this.fx.banner(this.player.x, this.player.y - 48, 'ELITE DOWN ' + c.done + '/' + c.need, '#ffb020');
+  }
+  _completeChallenge() {
+    const c = this.challenge;
+    this.challenge = null;
+    this.challengesWon++;
+    this.addRunCoins(c.reward);
+    this.fx.banner(this.player.x, this.player.y - 56, 'CHALLENGE COMPLETE — +' + c.reward + ' COINS', '#ffe066');
+    this.fx.explosion(this.player.x, this.player.y, 'explHoly', 2, { lightColor: '#ffe066' });
+    try { SOUNDS.chest(); } catch {}
+  }
+
+
+  // ================================================================
   // DIRECTOR — continuous escalating waves
   // ================================================================
   _director(dt) {
@@ -649,18 +942,23 @@ export class GameplayScene {
       d.wave++;
       d.nextWave = Math.max(0.7, 2.2 - d.t / 90);
       const roster = this.world.pickEnemyRoster(this.stage);
+      const themed = this.theme.roster;
       const count = Math.min(cap - alive, Math.round(rand(4, 7) * stageMul * Math.min(3.4, timeMul)));
       for (let i = 0; i < count; i++) {
         const a = rand(0, TAU);
         const r = rand(140, 185);
         const x = this.player.x + Math.cos(a) * r;
         const y = this.player.y + Math.sin(a) * r;
-        const id = roster[randInt(0, roster.length - 1)];
+        // sector identity: about a third of every wave wears the sector theme
+        const id = (i % 3 === 0 && themed.length) ? themed[randInt(0, themed.length - 1)] : roster[randInt(0, roster.length - 1)];
         const e = this.spawnEnemy(id, x, y);
         if (e) {
-          const hpScale = 1 + d.t / 130 + (this.stage - 1) * 0.3;
-          e.maxHp *= hpScale; e.hp = e.maxHp;
+          // past sector 1 we stop inflating HP into a sponge and start
+          // pushing speed and pattern pressure instead
+          const hpScale = Math.min(2.4, 1 + d.t / 130 + (this.stage - 1) * 0.3);
+          e.maxHp *= hpScale * (this.routeMods?.hpMul ?? 1); e.hp = e.maxHp;
           e.dmg *= 1 + d.t / 260;
+          e.spd *= Math.min(1.45, 1 + (this.stage - 1) * 0.1) * (this.routeMods?.spdMul ?? 1);
           e.xp = Math.round((e.xp || 4) * (1 + d.t / 300));
           this.fx.spawn({ x, y, vx: 0, vy: 0, color: '#985ce0', life: 0.3, size: 4, endSize: 0 });
         }
@@ -675,7 +973,7 @@ export class GameplayScene {
     // treasure
     d.chestT -= dt;
     if (d.chestT <= 0) {
-      d.chestT = 55;
+      d.chestT = this.routeMods?.chestFast ? 35 : 55;
       const a = rand(0, TAU);
       this.pickups.push(new Pickup('chest', this.player.x + Math.cos(a) * 130, this.player.y + Math.sin(a) * 130, 1));
       this.fx.banner(this.player.x, this.player.y - 44, 'A CHEST APPEARED', '#ffe066');
@@ -687,19 +985,27 @@ export class GameplayScene {
 
   _spawnElite() {
     const roster = this.world.pickEnemyRoster(this.stage);
+    const themed = this.theme.roster;
     const mods = ['armoured', 'fast', 'giant', 'regenerating', 'teleporting', 'summoner', 'enraged', 'void_touched'];
     const n = 1 + Math.floor(this.director.t / 120);
+    let lastMod = null;
     for (let k = 0; k < n; k++) {
       const a = rand(0, TAU);
-      const e = this.spawnEnemy(roster[randInt(0, roster.length - 1)],
+      // elites also wear the sector theme half the time
+      const pool = (k % 2 === 0 && themed.length) ? themed : roster;
+      const e = this.spawnEnemy(pool[randInt(0, pool.length - 1)],
         this.player.x + Math.cos(a) * 155, this.player.y + Math.sin(a) * 155);
       if (!e) continue;
       const mod = mods[randInt(0, mods.length - 1)];
+      lastMod = mod;
       this._applyEliteMod(e, mod);
-      e.maxHp = e.hp; 
+      e.maxHp = e.hp;
+      e.spd *= Math.min(1.45, 1 + (this.stage - 1) * 0.1) * (this.routeMods?.spdMul ?? 1);
       this.fx.ring(e.x, e.y, 30, '#ffb020', 0.6, 2);
     }
-    this.fx.banner(this.player.x, this.player.y - 46, 'ELITE INCOMING', '#ff8a30');
+    // one clear, honest warning per pack — what it is and how to fight it
+    this.fx.banner(this.player.x, this.player.y - 46,
+      (n > 1 ? 'ELITE PACK! ' : '') + (ELITE_HINTS[lastMod] || 'ELITE INCOMING'), '#ff8a30');
   }
   _applyEliteMod(e, mod) {
     const map = {
@@ -714,7 +1020,7 @@ export class GameplayScene {
     };
     map[mod]?.();
     e.eliteMod = mod;
-    e.hp *= 1 + (this.stage - 1) * 0.3;
+    e.hp *= Math.min(1.6, 1 + (this.stage - 1) * 0.3);
     e.maxHp = e.hp;
     e.xp = (e.xp || 4) * 6;
   }
@@ -768,16 +1074,40 @@ export class GameplayScene {
       this.fx.banner(this.player.x, this.player.y - 60, 'FINAL STAND — ' + Math.ceil(this.sectorTimeLeft) + 's', '#ff2a2a');
       this.fx.screenTint('#ff3020', 0.25);
     }
-    if(this.sectorTimeLeft <= 0 && !this._ended){
-      // If boss alive, must defeat boss, else victory
+    if(this.sectorTimeLeft <= 0 && !this._ended && !this.routeCards && this.transition <= 0){
+      // If boss alive, must defeat boss, else move on
       if(this.boss?.alive){
         this.fx.banner(this.player.x, this.player.y - 60, 'DEFEAT THE BOSS TO ESCAPE', '#ff4d6a');
         // keep timer at 0, don't end until boss dead
-      } else {
-        // victory — sector cleared
+      } else if (!this.bossDefeated) {
+        // boss never arrived — treat as a clear anyway
+        this._openRouteCards();
+      } else if (this.stage >= this.maxSectors) {
         this._endRun(true);
         return;
+      } else {
+        this._openRouteCards();
       }
+    }
+
+    // ---- ROUTE CARD overlay owns the frame (exact rewards, your pick) ----
+    if (this.routeCards) {
+      this.routeCards.t += rawDt;
+      this._updateRouteCards();
+      this.fx.update(rawDt * 0.25);
+      input.endFrame();
+      return;
+    }
+
+    // ---- SECTOR TRANSITION cinematic, then next sector ----
+    if (this.transition > 0) {
+      this.transition -= rawDt;
+      this.fx.update(rawDt * 0.5);
+      this._updateTelegraphs(rawDt);
+      this._updateDelayed(rawDt);
+      if (this.transition <= 0) this._nextSector();
+      input.endFrame();
+      return;
     }
 
     // ---- DEATH SEQUENCE: the end is a moment, not a screen swap ----
@@ -796,9 +1126,12 @@ export class GameplayScene {
     if (this.stopCard > 0) this.stopCard -= rawDt;
     if (this.buffs.dmgT > 0) this.buffs.dmgT -= dt;
     if (this.buffs.xpT > 0) this.buffs.xpT -= dt;
+    if (this.themeT > 0) this.themeT -= rawDt;
+    if (this.boss?.alive && this.boss.vulnT > 0) this.boss.vulnT -= dt;
     this._updateTelegraphs(rawDt);
     this._updateDelayed(rawDt);
     this._updateWaypoint(rawDt);
+    this._updateDoor(dt);
     // clarity governor: more enemies => ranged ones fire a little slower
     const aliveNow = this.enemies.reduce((n, e) => n + (e.alive ? 1 : 0), 0);
     this.enemyFireMult = aliveNow > 42 ? 1 + (aliveNow - 42) * 0.012 : 1;
@@ -1093,6 +1426,7 @@ export class GameplayScene {
       realmId: this.realmId, stage: this.stage, save: this.save, runStats: this.runStats,
       time: this.runTime, sectorDuration: this.sectorDuration, victory, coins: this.runCoins, level: p.level,
       owned: this.owned, apocalypse: this.apocalypseActive,
+      dmgByWeapon: this.dmgByWeapon, challengesWon: this.challengesWon, maxSectors: this.maxSectors,
       ending: victory ? (this._ending || findEnding(this.realmId)) : null,
       cause: victory ? null : (extra.cause || this.lastHitBy || 'THE VOID'),
       relic: this.relicActive?.name || null,
@@ -1216,6 +1550,28 @@ export class GameplayScene {
       this._light(w.x, w.y, 40, w.color, 0.7, 0.2);
     }
 
+    // ---- challenge door — the reward is printed right on it ----
+    if (this.door) {
+      const d = this.door;
+      const pulse = 0.5 + 0.5 * Math.sin(this.runTime * 6);
+      ctx.save();
+      ctx.globalAlpha = 0.14 + 0.08 * pulse;
+      ctx.fillStyle = '#ffe066';
+      ctx.beginPath(); ctx.arc(d.x, d.y, 22 + pulse * 4, 0, TAU); ctx.fill();
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = '#ffe066'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(d.x, d.y, 11 + pulse * 2, 0, TAU); ctx.stroke();
+      ctx.globalAlpha = 1;
+      drawIcon(ctx, d.type.icon, d.x - 8, d.y - 8, 16, '#ffe066');
+      // exact reward, always visible, no surprises
+      ctx.fillStyle = '#000000cc';
+      ctx.fillRect(d.x - 44, d.y - 30, 88, 16);
+      textC(ctx, 'CHALLENGE: ' + d.type.goal, d.x, d.y - 23, '#ffe066', 6, true);
+      textC(ctx, 'REWARD: ' + d.type.rewardText, d.x, d.y - 16, '#ffffff', 6, true);
+      this._light(d.x, d.y, 50, '#ffe066', 0.8, 0.2);
+      ctx.restore();
+    }
+
     // ---- draw order by Y ----
     const drawables = [];
     for (const u of this.pickups) drawables.push({ y: u.y, kind: 'pickup', o: u });
@@ -1294,8 +1650,23 @@ export class GameplayScene {
 
     // ---- HUD (screen space, after post) ----
     this.fx.drawTexts(out, cam);
+    // SECTOR IDENTITY: a light theme wash over the whole frame + intro panel
+    if (this.theme) {
+      out.fillStyle = this.theme.tint;
+      out.fillRect(0, 0, CFG.VIEW_W, CFG.VIEW_H);
+      if (this.themeT > 0) {
+        const a = Math.min(1, Math.min(this.themeT, 0.6) * 2.5);
+        out.globalAlpha = a * 0.85;
+        drawPanel(out, CFG.VIEW_W / 2 - 90, 20, 180, 24, this.theme.color);
+        out.globalAlpha = a;
+        textC(out, 'SECTOR ' + this.stage + ' — ' + this.theme.name, CFG.VIEW_W / 2, 29, this.theme.color, 8, true);
+        textC(out, this.theme.desc, CFG.VIEW_W / 2, 39, '#e8e2f0', 6);
+        out.globalAlpha = 1;
+      }
+    }
     this._drawHUD(out);
     if (this.cards) this._drawCards(out);
+    if (this.routeCards) this._drawRouteCards(out);
 
     // ---- STOP CARD: each new sector announces itself with story ----
     if (this.stopCard > 0 && !this.cards) {
@@ -1455,6 +1826,17 @@ export class GameplayScene {
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(b.x, b.y, b.radius + 8 + Math.sin(this.runTime * 3) * 2, 0, TAU); ctx.stroke();
     ctx.globalAlpha = 1;
+    // VULNERABLE window — the clear "hit it NOW" moment after a phase change
+    if (b.alive && b.vulnT > 0) {
+      const pulse = 0.55 + 0.45 * Math.sin(this.runTime * 14);
+      ctx.globalAlpha = 0.5 + 0.5 * pulse;
+      ctx.strokeStyle = '#8ef0ff';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.radius + 13 + pulse * 4, 0, TAU); ctx.stroke();
+      ctx.globalAlpha = 1;
+      textC(ctx, 'VULNERABLE ' + Math.ceil(b.vulnT) + 's', b.x, b.y - b.radius - 22, '#8ef0ff', 8, true);
+      this._light(b.x, b.y, 90, '#8ef0ff', 0.7);
+    }
     this._light(b.x, b.y, 70, b.color || '#ff8040', 0.6);
   }
 
@@ -1668,6 +2050,20 @@ export class GameplayScene {
       ctx.fillStyle = pct < 0.25 ? '#ff4d4a' : pct < 0.5 ? '#ff8a30' : '#8ef0ff';
       ctx.fillRect(bx,by,bw*pct,bh);
       textC(ctx, 'SECTOR '+this.stage+' '+Math.ceil(this.sectorTimeLeft)+'s', W/2, 6, '#ffffff', 6, true);
+      // active route — what this sector is doing to you, on screen at all times
+      let ty = 20;
+      if (this.routeName) {
+        textC(ctx, this.routeName + ' SECTOR', W / 2, ty, this.theme?.color || '#ffe066', 6, true);
+        ty += 8;
+      }
+      if (this.challenge) {
+        const c = this.challenge;
+        const prog = c.type === 'survive' ? Math.ceil(c.t) + 's'
+          : c.type === 'elites' ? c.done + '/' + c.need
+          : (c.core?.alive ? 'CORE UP' : 'DONE');
+        textC(ctx, 'CHALLENGE: ' + (c.type === 'survive' ? 'SURVIVE ' : c.type === 'elites' ? 'SLAY ELITES ' : 'BREAK CORE ') + prog
+          + ' — +' + c.reward + ' COINS', W / 2, ty, '#ffe066', 6, true);
+      }
     }
     // kills — icon + number, less text-litter
     ctx.fillStyle = '#ff7a6a';
@@ -1874,6 +2270,52 @@ export class GameplayScene {
       textC(ctx, 'BANISH (B) ' + this.banishes, W / 2 + 50, by + 11, bc, 7, true);
     }
   }
+
+  // ================================================================
+  // ROUTE CARD OVERLAY — pick the next sector, effects spelled out
+  // ================================================================
+  _drawRouteCards(ctx) {
+    const W = CFG.VIEW_W, H = CFG.VIEW_H;
+    ctx.fillStyle = 'rgba(6,4,14,0.88)';
+    ctx.fillRect(0, 0, W, H);
+    const t = Math.min(1, this.routeCards.t * 3.4);
+    textC(ctx, 'SECTOR ' + this.stage + ' CLEARED', W / 2, 46, '#ffe066', 13, true);
+    textC(ctx, 'CHOOSE THE NEXT LINE — every effect is exact', W / 2, 60, '#cfd4e0', 7);
+    textC(ctx, 'sector ' + (this.stage + 1) + ' of ' + this.maxSectors, W / 2, 72, '#8a8a9c', 6);
+    const geo = this._routeGeometry();
+    for (let i = 0; i < this.routeCards.opts.length; i++) {
+      const r = this.routeCards.opts[i];
+      const g = geo[i];
+      const y = g.y + (1 - t) * 24 * (i % 2 ? 1 : -1);
+      const sel = this.routeCards.idx === i;
+      ctx.globalAlpha = t;
+      // card body
+      ctx.fillStyle = sel ? '#1c1626' : '#120e1c';
+      ctx.fillRect(g.x, y, g.w, g.h);
+      ctx.strokeStyle = sel ? r.color : '#3a3450';
+      ctx.lineWidth = sel ? 2 : 1;
+      ctx.strokeRect(g.x + 0.5, y + 0.5, g.w - 1, g.h - 1);
+      if (sel) {
+        ctx.globalAlpha = t * 0.25 + 0.1 * Math.sin(this.runTime * 8);
+        ctx.fillStyle = r.color;
+        ctx.fillRect(g.x, y, g.w, g.h);
+        ctx.globalAlpha = t;
+      }
+      drawIcon(ctx, r.icon, g.x + g.w / 2 - 8, y + 8, 16, r.color);
+      textC(ctx, r.name, g.x + g.w / 2, y + 34, r.color, 8, true);
+      let ly = y + 48;
+      for (const line of r.desc) {
+        for (const seg of wrap6(ctx, line, g.w - 12)) {
+          textC(ctx, seg, g.x + g.w / 2, ly, '#e8e2f0', 6);
+          ly += 9;
+        }
+        ly += 2;
+      }
+      textC(ctx, '[' + (i + 1) + ']', g.x + g.w / 2, y + g.h - 6, '#6a647c', 6);
+      ctx.globalAlpha = 1;
+    }
+    textC(ctx, 'CLICK A CARD  ·  OR PRESS 1 / 2 / 3', W / 2, H - 22, '#8a8a9c', 6);
+  }
 }
 
 let ID = 1;
@@ -1881,4 +2323,18 @@ function hashStr(s) {
   let h = 5381;
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h) + s.charCodeAt(i);
   return h >>> 0;
+}
+// rough word-wrap for tiny HUD text (monospace ~3.6px/char at 6px font)
+function wrap6(ctx, s, maxW) {
+  const maxChars = Math.max(8, Math.floor(maxW / 3.7));
+  if (s.length <= maxChars) return [s];
+  const words = s.split(' ');
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    if (cur && (cur + ' ' + w).length > maxChars) { lines.push(cur); cur = w; }
+    else cur = cur ? cur + ' ' + w : w;
+  }
+  if (cur) lines.push(cur);
+  return lines;
 }

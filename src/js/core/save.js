@@ -69,6 +69,9 @@ export function newSave() {
     chests: { common: 1, rare: 0, epic: 0 },
     playerId: 'HT-' + Math.random().toString(36).slice(2,8).toUpperCase(),
     energy: 100,
+    // v1.4: per-family weapon mastery kills + daily goal tracking
+    familyKills: {},
+    dailyGoals: { date: '', goals: [], p: { kills: 0, coins: 0, elites: 0, boss: 0 }, claimed: [] },
   };
 }
 

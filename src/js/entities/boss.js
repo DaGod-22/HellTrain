@@ -359,6 +359,9 @@ export class Boss {
       ctx.fx.flash(this.x, this.y, '#fff0a0', 0.4);
       ctx.fx.burst(this.x, this.y, this.color, 40, { life: 0.7, spd: 200 });
       ctx.gameStats.phaseChanges = (ctx.gameStats.phaseChanges || 0) + 1;
+      // LEARNABLE PUNISH WINDOW: right after a phase change the boss
+      // is exposed for 3 seconds — 1.5x damage, ring + label shown.
+      this.vulnT = 3.0;
       this.vx = 0; this.vy = 0;
     }
     // Attack cycle: common beat -> signature beat -> common beat -> signature beat

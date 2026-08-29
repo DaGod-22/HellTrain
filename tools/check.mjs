@@ -261,7 +261,7 @@ try {
     }
     if (!failures) ok('all scenes enter and render cleanly');
 
-    // ---- scripted run: waves → cards → boss → victory route ----
+    // ---- scripted run: waves → cards → boss → route fork → sector 2... ----
     E._error = null;
     E.setScene('gameplay', { save: E.save, realmId: 'infernal', stage: 1 });
     G.__pump(10);
@@ -274,19 +274,46 @@ try {
           G.__pump(1);
           const cur = E.current;
           if (cur === gp && gp.cards) { gp._pickCard(0); guarded++; }
-          if (cur && cur !== gp && cur.routePick) { cur.routePick(0); guarded++; } // route overlay auto-picks
+          if (cur === gp && gp.routeCards) { gp._pickRoute(0); guarded++; } // route overlay auto-picks
         }
       };
       stepRun(60 * 8); // 8s of waves
       if (gp.runStats.kills < 1) fail('director spawned nothing after 8s');
-      // force boss + kill it
+      // force boss + kill it, then fast-forward to the sector fork
       gp._spawnBoss();
       stepRun(30);
       if (gp.boss) { gp.boss.hp = 1; }
       stepRun(60 * 6);
       if (E._error) fail('scripted run errored: ' + E._error.message);
       if (!gp.bossDefeated && gp.boss) fail('boss did not die when hp exhausted');
-      ok(`scripted run OK — ${gp.runStats.kills} kills, boss ${gp.bossDefeated ? 'down' : 'n/a'}, ${guarded} overlays resolved`);
+      // multi-sector: force the sector clock to zero, expect route cards
+      const stageBefore = gp.stage;
+      gp.runTime = gp.sectorDuration;
+      stepRun(10);
+      if (!gp.routeCards) fail('sector clear did not open route cards');
+      if (gp.routeCards) {
+        if (gp.routeCards.opts.length !== 3) fail('route fork should offer 3 lines');
+        gp._pickRoute(0);
+        stepRun(180); // ride out the transition cinematic
+        if (gp.stage !== stageBefore + 1) fail('route pick did not advance to sector ' + (stageBefore + 1) + ' (stage=' + gp.stage + ')');
+        if (gp.sectorTimeLeft <= 0) fail('new sector clock did not reset');
+        if (!gp.enemies.length && !gp.cards) fail('new sector spawned no enemies yet');
+        ok(`multi-sector OK — now sector ${gp.stage} (${gp.theme ? gp.theme.name : '?'})`);
+      }
+      // sector 2 → boss → sector 3 → boss → final summary
+      for (let s = gp.stage; s <= gp.maxSectors; s++) {
+        gp._spawnBoss();
+        stepRun(30);
+        if (gp.boss) gp.boss.hp = 1;
+        gp.runTime = gp.sectorDuration;
+        stepRun(240);
+      }
+      if (E._error) fail('multi-sector run errored: ' + E._error.message);
+      if (E.current === gp) fail('final sector never resolved to a summary');
+      else ok(`run resolved after sector ${gp.maxSectors} — ${gp.runStats.kills} kills, ${guarded} overlays`);
+      if (!(gp.dmgByWeapon && Object.keys(gp.dmgByWeapon).length)) fail('per-weapon damage was not recorded');
+      if (!(E.save.familyKills && Object.keys(E.save.familyKills).length)) fail('weapon mastery kills were not recorded');
+      ok(`mastery + damage bookkeeping OK — ${Object.keys(E.save.familyKills || {}).length} families, ${Object.keys(gp.dmgByWeapon || {}).length} damage sources`);
 
       // ---- defeat path on a fresh run ----
       E._error = null;
