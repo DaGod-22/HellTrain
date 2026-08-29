@@ -263,7 +263,12 @@ export class WorldMapScene extends Page {
     });
     const unlocked = this.save.unlockedRealms || ['purgatory'];
     const diff = DIFFICULTIES[this.diffTab];
-    label(ctx, `${diff.name.toUpperCase()} — foes x${diff.enemyHp} health, x${diff.enemyDmg} damage, x${diff.lootMult} coins`, KW / 2, 84, K.SUB, 6);
+    label(ctx, `foes x${diff.enemyHp} health · x${diff.enemyDmg} damage · x${diff.lootMult} coins`, KW / 2, 80, K.SUB, 6);
+    if (diff.rule && diff.rule.id !== 'none') {
+      label(ctx, `RULE — ${diff.rule.name}: ${diff.rule.desc}`, KW / 2, 91, K.GOLD, 6);
+    } else {
+      label(ctx, 'RULE — none. the honest line.', KW / 2, 91, K.DIM, 6);
+    }
     const [a, b] = this.list.visibleRange();
     for (let i = a; i <= b; i++) {
       const realm = REALMS[i];

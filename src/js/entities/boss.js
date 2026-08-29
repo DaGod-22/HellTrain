@@ -360,8 +360,9 @@ export class Boss {
       ctx.fx.burst(this.x, this.y, this.color, 40, { life: 0.7, spd: 200 });
       ctx.gameStats.phaseChanges = (ctx.gameStats.phaseChanges || 0) + 1;
       // LEARNABLE PUNISH WINDOW: right after a phase change the boss
-      // is exposed for 3 seconds — 1.5x damage, ring + label shown.
-      this.vulnT = 3.0;
+      // is exposed — 1.5x damage, ring + label shown. IRON SKY rule
+      // bosses enrage and these windows last TWICE as long.
+      this.vulnT = this._enraged ? 6.0 : 3.0;
       this.vx = 0; this.vy = 0;
     }
     // Attack cycle: common beat -> signature beat -> common beat -> signature beat
@@ -370,7 +371,7 @@ export class Boss {
       const sig = this.moveIndex % 2 === 1;
       const att = sig ? this.moves[Math.floor(this.moveIndex / 2) % this.moves.length] : 'slam';
       this.moveIndex += 1;
-      this.attackCd = sig ? (4.4 - this.phase * 0.25) : (3.4 - this.phase * 0.2);
+      this.attackCd = (sig ? (4.4 - this.phase * 0.25) : (3.4 - this.phase * 0.2)) * (this._enraged ? 0.7 : 1);
       this._performAttack(att, ctx);
     }
     this._moveAI(dt, ctx);

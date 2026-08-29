@@ -332,6 +332,53 @@ try {
       if (!gp3.player.turrets.length) fail('sentry turret never deployed');
       ok('new weapons OK — charge/turret/echo fire and evolve');
 
+      // ---- v1.5 five-fix verification ----
+      E._error = null;
+      // (26) variant sprites render for every recycled species
+      for (const wid2 of ['mirror_wisp', 'star_wisp', 'lost_soul', 'marsh_lurker', 'slag_gobbler']) {
+        const ve = gp3.spawnEnemy(wid2, gp3.player.x + 40, gp3.player.y + 20);
+        if (ve && !ve.variant) fail(wid2 + ' has no variant decor');
+      }
+      G.__pump(30);
+      if (E._error) fail('variant rendering errored: ' + E._error.message);
+      // (27+30) hard rule: elites arrive as named pairs
+      E.setScene('gameplay', { save: E.save, realmId: 'infernal', stage: 1, difficulty: 'hard' });
+      G.__pump(5);
+      const gpH = E.current;
+      gpH._spawnElite();
+      const eliteN = gpH.enemies.filter(e => e.eliteMod).length;
+      if (eliteN < 2) fail(`TWIN TROUBLE did not pair the elites (${eliteN})`);
+      // (28) furnace burst: full meter + burst => overdrive + reset
+      gpH.train.furnace = gpH.train.furnaceMax;
+      gpH.train.x = gpH.player.x - 40; gpH.train.y = gpH.player.y + 10;
+      gpH._furnaceBurst();
+      G.__pump(20);
+      if (!gpH.train.overdrive) fail('furnace burst did not trigger overdrive');
+      if (gpH.train.furnace !== 0) fail('furnace did not reset after burst');
+      // (29) waypoints are contested: wardens + decaying value
+      gpH._spawnWaypoint();
+      if (!gpH.waypoint) fail('waypoint failed to spawn');
+      else {
+        const wardens = gpH.enemies.filter(e => e.warden).length;
+        if (wardens < 3) fail(`waypoint spawned with ${wardens} wardens`);
+        gpH.waypoint.life = 2; // let it almost expire
+        G.__pump(140);
+        if (gpH.waypoint && gpH.waypoint.value > 0.55) fail('waypoint value does not decay');
+      }
+      // (30) second wind on easy: the killing blow is survived once
+      E.setScene('gameplay', { save: E.save, realmId: 'purgatory', stage: 1, difficulty: 'easy' });
+      G.__pump(5);
+      const gpE = E.current;
+      gpE.player.shield = 0;
+      gpE.player.invuln = 0;
+      gpE.player.takeDamage(999999, gpE, 'CHECK BOT');
+      G.__pump(5);
+      if (!gpE.player.alive) fail('SECOND WIND did not save the player on easy');
+      if (gpE.player.hp <= 0) fail('SECOND WIND left hp at zero');
+      G.__pump(60);
+      if (E._error) fail('five-fix block errored: ' + E._error.message);
+      ok('five fixes OK — variants, twin elites, furnace burst, contested waypoints, second wind');
+
       // ---- defeat path on a fresh run ----
       E._error = null;
       E.setScene('gameplay', { save: E.save, realmId: 'frozen', stage: 3 });

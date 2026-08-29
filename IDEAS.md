@@ -111,11 +111,13 @@ Ground rules kept in mind throughout: one self-contained page, no gambling (ever
 
 # Where v1.4 already falls short — 15 real parts that need work
 
-26. **Enemy sprites recycle.** Ghost sprite for Lost Soul/Star Wisp/Mirror Wisp; blob for Slime/Marsh Lurker/Slag Gobbler. Outlines carry identity; the base art doesn't.
-27. **Elite pack hints under-report.** A multi-elite spawn banner prints only the last mod's hint — warned about SWIFT, charged by ARMORED.
-28. **The train is a stat stick.** Follows, buffs, shows a health bar, never creates a combat decision; pick-2 carriages barely register in-run.
-29. **Waypoints are walk-to-circle buffs.** No risk, no decision, no penalty for skipping. Free loot with extra steps.
-30. **Difficulty is numbers-only.** Six settings, one multiplier each (HP/damage). Zero new behaviors or rules.
+> **Items 26–30 were FIXED in v1.5.0.** The rest are still open.
+
+26. ~~**Enemy sprites recycle.**~~ **FIXED v1.5.0** — drawn-on variant decor: Star Wisp grows a rotating four-point star, Mirror Wisp a faceted diamond shell, Lost Soul a teal glow with drooping tails, Marsh Lurker swaying reeds, Slag Gobbler a chewing toothed maw.
+27. ~~**Elite pack hints under-report.**~~ **FIXED v1.5.0** — packs announce EVERY mod ('ELITE PACK! ARMORED + SWIFT'), and each elite flashes its own tag where it spawns.
+28. ~~**The train is a stat stick.**~~ **FIXED v1.5.0** — THE FURNACE: kills stoke it (2× fast beside the train); full meter + [E] near the engine = broadside + overdrive, and EACH carriage changes the burst (Gun Car +3 shells, Ammo 9s, Medical +25% heal, Engine instant ultimate, Vault coin spray, Plated 3s invuln). Loadout icons live in the HUD.
+29. ~~**Waypoints are walk-to-circle buffs.**~~ **FIXED v1.5.0** — waypoints are CONTESTED: themed wardens circle them (1.5× XP, gold tick) and value decays 100%→50% on a visible ring. Grab now through the guards, or clear them and settle for half.
+30. ~~**Difficulty is numbers-only.**~~ **FIXED v1.5.0** — every tier has a named rule: Easy SECOND WIND (survive one death per sector), Hard TWIN TROUBLE (paired elites), Nightmare VOLATILE ASH (corpses leave burning ground), Abyss IRON SKY (boss enrage at 30%, double-length weak windows), Infinite THE FULL EXPRESS (all three). Shown on the map and announced in-sector.
 31. **Sectors 2–3 are the same fight, longer.** 120→180→240s with no new content; patience tax, not escalation.
 32. **Energy gates PLAY.** 5 per run, 20s regen — an idle-game holdover that punishes engaged players; legacy saves start at 100.
 33. **Audio is one thin layer.** Two coexisting audio systems; all weapon sounds ride four synth tones; sectors have no music identity.

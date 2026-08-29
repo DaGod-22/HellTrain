@@ -183,6 +183,8 @@ export class Player {
         ctx?.onRevive?.(this);
         return dealt;
       }
+      // SECOND WIND (difficulty rule): the run itself refuses this death
+      if (ctx?.secondWind && ctx.secondWind()) return dealt;
       if (this.undying && !this.undyingActive) {
         this.undyingActive = true; this.undyingT = 4; this.hp = 1; this.invuln = 0.6;
         ctx?.fx.banner(this.x, this.y - 30, 'UNDYING', '#ff4d6a');

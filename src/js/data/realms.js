@@ -182,13 +182,26 @@ export const ARMOURS = [
 // DIFFICULTY
 // ================================================================
 export const DIFFICULTIES = [
-  { id: 'easy', name: 'Easy', enemyHp: 0.7, enemyDmg: 0.7, xpMult: 1.2, lootMult: 1.5, trainHp: 1.3 },
-  { id: 'normal', name: 'Normal', enemyHp: 1.0, enemyDmg: 1.0, xpMult: 1.0, lootMult: 1.0, trainHp: 1.0 },
-  { id: 'hard', name: 'Hard', enemyHp: 1.4, enemyDmg: 1.25, xpMult: 1.0, lootMult: 1.0, trainHp: 0.9 },
-  { id: 'nightmare', name: 'Nightmare', enemyHp: 1.9, enemyDmg: 1.6, xpMult: 1.0, lootMult: 0.9, trainHp: 0.75 },
-  { id: 'abyss', name: 'Abyss', enemyHp: 2.8, enemyDmg: 2.2, xpMult: 0.95, lootMult: 0.85, trainHp: 0.6 },
-  { id: 'infinite', name: 'Infinite', enemyHp: 3.5, enemyDmg: 2.8, xpMult: 0.9, lootMult: 0.8, trainHp: 0.5 },
+  { id: 'easy', name: 'Easy', enemyHp: 0.7, enemyDmg: 0.7, xpMult: 1.2, lootMult: 1.5, trainHp: 1.3,
+    rule: { id: 'second_wind', name: 'SECOND WIND', desc: 'survive a killing blow once per sector' } },
+  { id: 'normal', name: 'Normal', enemyHp: 1.0, enemyDmg: 1.0, xpMult: 1.0, lootMult: 1.0, trainHp: 1.0,
+    rule: { id: 'none', name: 'THE STANDARD LINE', desc: 'no tricks, no twists — the honest line' } },
+  { id: 'hard', name: 'Hard', enemyHp: 1.4, enemyDmg: 1.25, xpMult: 1.0, lootMult: 1.0, trainHp: 0.9,
+    rule: { id: 'twin_elites', name: 'TWIN TROUBLE', desc: 'elites always travel in pairs' } },
+  { id: 'nightmare', name: 'Nightmare', enemyHp: 1.9, enemyDmg: 1.6, xpMult: 1.0, lootMult: 0.9, trainHp: 0.75,
+    rule: { id: 'volatile_ash', name: 'VOLATILE ASH', desc: 'slain foes burst into burning ground' } },
+  { id: 'abyss', name: 'Abyss', enemyHp: 2.8, enemyDmg: 2.2, xpMult: 0.95, lootMult: 0.85, trainHp: 0.6,
+    rule: { id: 'boss_enrage', name: 'IRON SKY', desc: 'bosses enrage at 30% HP — but their weak windows last twice as long' } },
+  { id: 'infinite', name: 'Infinite', enemyHp: 3.5, enemyDmg: 2.8, xpMult: 0.9, lootMult: 0.8, trainHp: 0.5,
+    rule: { id: 'all', name: 'THE FULL EXPRESS', desc: 'twin elites + volatile ash + boss enrage, stacked' } },
 ];
+
+export function hasDifficultyRule(difficulty, flag) {
+  const id = difficulty?.rule?.id;
+  if (!id) return false;
+  if (id === 'all') return flag !== 'second_wind';   // the full express earns no safety nets
+  return id === flag;
+}
 
 export function findDifficulty(id) { return DIFFICULTIES.find(d => d.id === id) || DIFFICULTIES[1]; }
 

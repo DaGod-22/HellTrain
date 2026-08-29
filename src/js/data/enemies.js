@@ -3,7 +3,7 @@
 // ============================================================
 export const ENEMIES = [
   // chasers
-  { id: 'lost_soul', name: 'Lost Soul', hp: 14, dmg: 6, spd: 60, radius: 6, ai: 'chase', xp: 4, sprite: 'ghost',
+  { id: 'lost_soul', name: 'Lost Soul', hp: 14, dmg: 6, spd: 60, radius: 6, ai: 'chase', xp: 4, sprite: 'ghost', variant: 'soul',
     behavior: 'floats', desc: 'A wandering spirit.' },
   { id: 'wraithling', name: 'Wraithling', hp: 22, dmg: 9, spd: 80, radius: 6, ai: 'chase', xp: 6, sprite: 'wraith',
     desc: 'A faster, more dangerous wraith.' },
@@ -40,7 +40,7 @@ export const ENEMIES = [
   { id: 'shadow_bat', name: 'Shadow Bat', hp: 16, dmg: 6, spd: 90, radius: 6, ai: 'fly', xp: 4, sprite: 'flyer',
     desc: 'Flies over obstacles.' },
   // NEW AAA ENEMIES
-  { id: 'marsh_lurker', name: 'Marsh Lurker', hp: 55, dmg: 16, spd: 55, radius: 9, ai: 'tank', xp: 14, sprite: 'blob',
+  { id: 'marsh_lurker', name: 'Marsh Lurker', hp: 55, dmg: 16, spd: 55, radius: 9, ai: 'tank', xp: 14, sprite: 'blob', variant: 'lurker',
     desc: 'Toxic swamp dweller that leaves poison pools.' },
   { id: 'vine_tangler', name: 'Vine Tangler', hp: 35, dmg: 10, spd: 70, radius: 7, ai: 'chase', xp: 10, sprite: 'crawler',
     desc: 'Roots you in place.' },
@@ -48,7 +48,7 @@ export const ENEMIES = [
     desc: 'Crushing industrial brute.' },
   { id: 'molten_slinger', name: 'Molten Slinger', hp: 40, dmg: 18, spd: 60, radius: 7, ai: 'ranged', xp: 13, sprite: 'caster_fire',
     desc: 'Hurls molten slag.', proj: { id: 'fire_bolt', dmg: 16, spd: 180, range: 260, cd: 1.5 } },
-  { id: 'star_wisp', name: 'Star Wisp', hp: 20, dmg: 12, spd: 110, radius: 5, ai: 'fly', xp: 8, sprite: 'ghost',
+  { id: 'star_wisp', name: 'Star Wisp', hp: 20, dmg: 12, spd: 110, radius: 5, ai: 'fly', xp: 8, sprite: 'ghost', variant: 'star',
     desc: 'Cosmic drifter, phases through walls.' },
   { id: 'void_reaver', name: 'Void Reaver', hp: 80, dmg: 20, spd: 85, radius: 9, ai: 'chase', xp: 18, sprite: 'knight_void',
     desc: 'Tears reality on hit.' },
@@ -59,9 +59,9 @@ export const ENEMIES = [
   // ---- v1.4 new behaviours: readable, dodgeable, family-friendly ----
   { id: 'ember_herald', name: 'Ember Herald', hp: 30, dmg: 14, spd: 42, radius: 8, ai: 'sweep', xp: 12, sprite: 'caster_fire',
     desc: 'Marks a burning line — step off it before it blazes.' },
-  { id: 'slag_gobbler', name: 'Slag Gobbler', hp: 55, dmg: 8, spd: 30, radius: 9, ai: 'eater', xp: 16, sprite: 'blob',
+  { id: 'slag_gobbler', name: 'Slag Gobbler', hp: 55, dmg: 8, spd: 30, radius: 9, ai: 'eater', xp: 16, sprite: 'blob', variant: 'maw',
     desc: 'Eats your shots and grows. Deal with it first.' },
-  { id: 'mirror_wisp', name: 'Mirror Wisp', hp: 24, dmg: 6, spd: 85, radius: 6, ai: 'mirror', xp: 14, sprite: 'ghost',
+  { id: 'mirror_wisp', name: 'Mirror Wisp', hp: 24, dmg: 6, spd: 85, radius: 6, ai: 'mirror', xp: 14, sprite: 'ghost', variant: 'mirror',
     desc: 'Bounces your shots back. Don\'t just hold the trigger.' },
 ];
 

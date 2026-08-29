@@ -14,7 +14,7 @@ import { Projectile, Meteor, Flame, Bomb, Pool, BlackHole } from '../entities/pr
 import { Pickup } from '../entities/pickup.js';
 import { Boss } from '../entities/boss.js';
 import { Train } from '../entities/train.js';
-import { REALMS, findRealm, findDifficulty, RELICS, LORE } from '../data/realms.js';
+import { REALMS, findRealm, findDifficulty, RELICS, LORE, hasDifficultyRule } from '../data/realms.js';
 import { ENDINGS, REALM_RELICS, findEnding } from '../data/endings.js';
 import { ASCENSIONS, APOCALYPSE_PROTOCOL, APOCALYPSE_CARDS, RARITY_COLORS, ROMAN,
   rollCards, apocalypseReady, findAscension, offerPool } from '../data/upgrades.js';
@@ -146,6 +146,17 @@ const ELITE_HINTS = {
   enraged: 'ENRAGED ELITE — furious and twice as mean!',
   void_touched: 'VOID ELITE — fire will not burn it!',
 };
+// short tags for packs and spawn markers
+const ELITE_SHORT = {
+  armoured: 'ARMORED',
+  fast: 'SWIFT',
+  giant: 'COLOSSAL',
+  regenerating: 'REGEN',
+  teleporting: 'PHASING',
+  summoner: 'HIVE',
+  enraged: 'ENRAGED',
+  void_touched: 'VOID',
+};
 
 export class GameplayScene {
   constructor(engine) {
@@ -250,6 +261,9 @@ export class GameplayScene {
     this.challenge = null;          // active challenge state
     this.challengesWon = 0;
     this.themeT = 6;                // how long the theme banner stays up
+    this.hazards = [];              // VOLATILE ASH burning ground
+    this._secondWindUsed = false;   // SECOND WIND rule, once per sector
+    this._furnaceHintDone = false;
 
     // veteran perma: start with extra levels
     for (let i = 0; i < (this.player.startLevelBonus || 0); i++) {
@@ -494,6 +508,22 @@ export class GameplayScene {
       bumpGoal(this.save, 'kills', 1);
       if (e.eliteMod) { bumpGoal(this.save, 'elites', 1); if (this.challenge?.type === 'elites') this._challengeEliteKill(); }
     } catch {}
+
+    // THE FURNACE: kills stoke the train. Fight BESIDE the iron horse and
+    // it heats twice as fast — positioning is the decision.
+    try {
+      if (!this.train.dead) {
+        const near = dist(this.player.x, this.player.y, this.train.x, this.train.y) < 130;
+        this.train.furnace = Math.min(this.train.furnaceMax,
+          this.train.furnace + (opts.byTrain ? 5 : near ? 4 : 2));
+      }
+    } catch {}
+
+    // VOLATILE ASH rule: the slain burst into burning ground
+    if (hasDifficultyRule(this.difficulty, 'volatile_ash') && Math.random() < 0.25 && (e.radius || 7) < 12) {
+      this.hazards.push({ x: e.x, y: e.y, r: 13 + (e.radius || 6), life: 2.6, tick: 0 });
+      this.fx.spawn({ x: e.x, y: e.y, vx: 0, vy: -20, color: '#ff7a33', life: 0.5, size: 3, endSize: 0.5 });
+    }
 
     // visuals
     this.fx.explosion(e.x, e.y, 'impact', (e.radius || 7) / 9, { light: 0.6, speed: 26 });
@@ -856,6 +886,8 @@ export class GameplayScene {
     this.themeT = 6;
     this._spawnAmbient();
     this.door = null; this.doorT = 24; this.challenge = null;
+    this.hazards.length = 0;
+    this._secondWindUsed = false;
     this.fx.flash(this.player.x, this.player.y, '#ffffff', 0.3);
     this.fx.banner(this.player.x, this.player.y - 40, this.theme.name, this.theme.color);
     this.fx.screenTint(this.theme.color, 0.35);
@@ -910,6 +942,87 @@ export class GameplayScene {
     this.fx.banner(this.player.x, this.player.y - 52, type.name.toUpperCase() + ': ' + type.goal, '#ffe066');
     try { SOUNDS.boss(); } catch {}
   }
+  // ================================================================
+  // THE FURNACE — the train as a decision, not furniture.
+  // Kills stoke it (fast beside the train); when full, press E near
+  // the engine for a carriage-shaped broadside + overdrive.
+  // ================================================================
+  _updateFurnace() {
+    const t = this.train;
+    if (t.dead || t.furnace < t.furnaceMax || t.overdrive) return;
+    if (dist(this.player.x, this.player.y, t.x, t.y) < 90 && this.input.wasPressed('KeyE')) {
+      this._furnaceBurst();
+    }
+  }
+  _furnaceBurst() {
+    const t = this.train;
+    const loadout = t.carriageLoadout || [];
+    t.furnace = 0;
+    t.overdrive = true;
+    t.overdriveT = loadout.includes('ammo') ? 9 : 6;
+    // broadside: a screaming fan of shells across the line
+    const dir = t.facing || 1;
+    const n = 6 + (loadout.includes('gunsmith') ? 3 : 0);
+    for (let i = 0; i < n; i++) {
+      const off = (i - (n - 1) / 2) * 26;
+      this.spawnMeteor(t.x + dir * (46 + (i % 2) * 16) + rand(-6, 6), t.y + off, 30 * t.dmgMul, 34);
+    }
+    if (loadout.includes('medical')) this.player.heal(this.player.maxHp * 0.25);
+    if (loadout.includes('engine')) t.energy = t.maxEnergy;   // ultimate ready NOW
+    if (loadout.includes('loot')) {
+      for (let i = 0; i < 8; i++) this.pickups.push(new Pickup('coin', t.x + rand(-24, 24), t.y + rand(-16, 16), 8));
+    }
+    if (loadout.includes('plating')) t.invuln = 3;
+    this.fx.explosion(t.x, t.y, 'explFire', 3, { lightColor: '#ff7a33' });
+    this.fx.ring(t.x, t.y, 90, '#ff9033', 0.6, 3);
+    this.fx.screenTint('#ff5a20', 0.3);
+    this.fx.banner(t.x, t.y - 46, 'FURNACE BURST!', '#ff7a33');
+    this.camera.shake(0.8);
+    try { SOUNDS.explosion(1.2); } catch {}
+  }
+  _updateHazards(dt) {
+    for (let i = this.hazards.length - 1; i >= 0; i--) {
+      const hz = this.hazards[i];
+      hz.life -= dt;
+      hz.tick -= dt;
+      if (hz.life <= 0) { this.hazards.splice(i, 1); continue; }
+      if (Math.random() < 0.25) this.fx.fire(hz.x + rand(-hz.r, hz.r) * 0.7, hz.y + rand(-hz.r, hz.r) * 0.5, '#ff7a33');
+      const p = this.player;
+      if (hz.tick <= 0 && p.alive && dist(p.x, p.y, hz.x, hz.y) < hz.r + p.radius * 0.5) {
+        hz.tick = 0.5;
+        const dealt = p.takeDamage(4, this, 'VOLATILE ASH');
+        if (dealt > 0) this.onPlayerHit(dealt, '#ff7a33', 'VOLATILE ASH');
+      }
+    }
+  }
+  _updateBossRule() {
+    // IRON SKY rule: below 30% HP the boss enrages — but its punish
+    // windows double in length. Risk and reward, clearly labelled.
+    const b = this.boss;
+    if (!b || !b.alive || b._enraged) return;
+    if (hasDifficultyRule(this.difficulty, 'boss_enrage') && b.hp / b.maxHp < 0.3) {
+      b._enraged = true;
+      this.fx.banner(this.player.x, this.player.y - 56, 'IRON SKY — THE BOSS IS ENRAGED', '#ff4d6a');
+      this.fx.banner(this.player.x, this.player.y - 44, 'ITS WEAK WINDOWS NOW LAST TWICE AS LONG', '#8ef0ff');
+      this.fx.screenTint('#ff2020', 0.4);
+      this.camera.shake(0.7);
+      try { SOUNDS.boss(); } catch {}
+    }
+  }
+  // SECOND WIND rule (Easy): the first killing blow each sector is survived
+  secondWind() {
+    if (!hasDifficultyRule(this.difficulty, 'second_wind') || this._secondWindUsed) return false;
+    this._secondWindUsed = true;
+    const p = this.player;
+    p.hp = p.maxHp * 0.35;
+    p.invuln = 2.0;
+    this.fx.banner(p.x, p.y - 40, 'SECOND WIND!', '#7ae06a');
+    this.fx.explosion(p.x, p.y, 'explHoly', 2, { lightColor: '#7ae06a' });
+    this.fx.screenTint('#7ae06a', 0.3);
+    try { SOUNDS.levelup(); } catch {}
+    return true;
+  }
+
   _updateChallenge(dt) {
     const c = this.challenge;
     if (c.type === 'survive') {
@@ -1002,8 +1115,9 @@ export class GameplayScene {
     const roster = this.world.pickEnemyRoster(this.stage);
     const themed = this.theme.roster;
     const mods = ['armoured', 'fast', 'giant', 'regenerating', 'teleporting', 'summoner', 'enraged', 'void_touched'];
-    const n = 1 + Math.floor(this.director.t / 120);
-    let lastMod = null;
+    let n = 1 + Math.floor(this.director.t / 120);
+    if (hasDifficultyRule(this.difficulty, 'twin_elites')) n = Math.max(2, n);
+    const packMods = [];
     for (let k = 0; k < n; k++) {
       const a = rand(0, TAU);
       // elites also wear the sector theme half the time
@@ -1012,15 +1126,21 @@ export class GameplayScene {
         this.player.x + Math.cos(a) * 155, this.player.y + Math.sin(a) * 155);
       if (!e) continue;
       const mod = mods[randInt(0, mods.length - 1)];
-      lastMod = mod;
+      packMods.push(mod);
       this._applyEliteMod(e, mod);
       e.maxHp = e.hp;
       e.spd *= Math.min(1.45, 1 + (this.stage - 1) * 0.1) * (this.routeMods?.spdMul ?? 1);
       this.fx.ring(e.x, e.y, 30, '#ffb020', 0.6, 2);
+      // a warning tag right where it spawns — no surprises
+      this.fx.damageText(e.x, e.y - (e.radius || 7) - 16, ELITE_SHORT[mod] || 'ELITE', '#ffb020', { size: 6 });
     }
-    // one clear, honest warning per pack — what it is and how to fight it
-    this.fx.banner(this.player.x, this.player.y - 46,
-      (n > 1 ? 'ELITE PACK! ' : '') + (ELITE_HINTS[lastMod] || 'ELITE INCOMING'), '#ff8a30');
+    // EVERY threat named: singles get the full hint, packs list them all
+    if (packMods.length === 1) {
+      this.fx.banner(this.player.x, this.player.y - 46, ELITE_HINTS[packMods[0]] || 'ELITE INCOMING', '#ff8a30');
+    } else if (packMods.length > 1) {
+      this.fx.banner(this.player.x, this.player.y - 46,
+        'ELITE PACK! ' + packMods.map(m => ELITE_SHORT[m] || 'ELITE').join(' + '), '#ff8a30');
+    }
   }
   _applyEliteMod(e, mod) {
     const map = {
@@ -1150,6 +1270,17 @@ export class GameplayScene {
     this._updateDelayed(rawDt);
     this._updateWaypoint(rawDt);
     this._updateDoor(dt);
+    this._updateFurnace();
+    this._updateHazards(dt);
+    this._updateBossRule();
+    // MEDICAL CAR: the medical car pulses a slow heal when you stay close
+    if ((this.train.carriageLoadout || []).includes('medical') && !this.train.dead) {
+      if (dist(this.player.x, this.player.y, this.train.x, this.train.y) < 70) {
+        this.player.heal(2.4 * dt);
+        if (Math.random() < 0.06) this.fx.spawn({ x: this.player.x + rand(-6, 6), y: this.player.y - 8,
+          vx: 0, vy: -18, color: '#7ae06a', life: 0.5, size: 1.6, endSize: 0.3 });
+      }
+    }
     // clarity governor: more enemies => ranged ones fire a little slower
     const aliveNow = this.enemies.reduce((n, e) => n + (e.alive ? 1 : 0), 0);
     this.enemyFireMult = aliveNow > 42 ? 1 + (aliveNow - 42) * 0.012 : 1;
@@ -1271,6 +1402,7 @@ export class GameplayScene {
     const w = this.waypoint;
     if (!w) return;
     w.life -= dt;
+    w.value = 0.5 + 0.5 * Math.max(0, w.life / w.lifeMax);   // fades to half
     if (w.life <= 0) { this.waypoint = null; this.waypointT = 16; return; }
     if (dist(this.player.x, this.player.y, w.x, w.y) < 24) this._collectWaypoint();
   }
@@ -1290,50 +1422,67 @@ export class GameplayScene {
       purge: { color: '#8ef07a', label: 'GRAVE TIDE' },
       sigil: { color: '#ffb040', label: 'RELIC SIGIL' },
     }[kind];
-    this.waypoint = { kind, x, y, life: 26, color: meta.color, label: meta.label, t: 0 };
-    this.fx.banner(this.player.x, this.player.y - 56, meta.label.toUpperCase(), meta.color);
-    this.fx.ring(x, y, 30, meta.color, 0.5, 2);
+    this.waypoint = { kind, x, y, life: 26, lifeMax: 26, color: meta.color, label: meta.label, t: 0, value: 1 };
+    // CONTESTED GROUND: wardens circle the prize and its value fades —
+    // dash in now at full value, or clear the wardens first. Your call.
+    const themed = this.theme.roster;
+    const roster = this.world.pickEnemyRoster(this.stage);
+    const pool = themed.length ? themed : roster;
+    for (let i = 0; i < 3 + Math.min(2, this.stage - 1); i++) {
+      const a = (i / 4) * TAU + rand(0, 1);
+      const g = this.spawnEnemy(pool[randInt(0, pool.length - 1)], x + Math.cos(a) * 34, y + Math.sin(a) * 30);
+      if (g) { g.warden = true; g.xp = Math.round((g.xp || 4) * 1.5); }
+    }
+    this.fx.banner(this.player.x, this.player.y - 56, meta.label.toUpperCase() + ' — CONTESTED', meta.color);
+    this.fx.ring(x, y, 44, meta.color, 0.6, 2);
   }
 
   _collectWaypoint() {
     const w = this.waypoint;
     const p = this.player;
     const tx = w.x, ty = w.y;
+    const v = w.value ?? 1;      // contested value: 1.0 fresh -> 0.5 stale
+    const pct = Math.round(v * 100);
     this.waypoint = null;
     this.waypointT = 20;
     this.fx.explosion(tx, ty, 'explHoly', 2, { lightColor: w.color });
     this.fx.ring(tx, ty, 70, w.color, 0.6, 3);
     try { SOUNDS.chest(); } catch {}
     switch (w.kind) {
-      case 'beacon':
-        this.buffs.dmgT = 30; this.buffs.dmgMult = 1.08;
-        this.fx.banner(p.x, p.y - 40, '+8% DAMAGE 30s', '#2ff0ff');
+      case 'beacon': {
+        const dur = Math.round(30 * v);
+        this.buffs.dmgT = dur; this.buffs.dmgMult = 1.08;
+        this.fx.banner(p.x, p.y - 40, '+8% DAMAGE ' + dur + 's (' + pct + '% VALUE)', '#2ff0ff');
         break;
-      case 'cache':
+      }
+      case 'cache': {
         for (let i = 0; i < 3; i++) this.pickups.push(new Pickup('chest', tx + rand(-14, 14), ty + rand(-10, 10), 1));
-        for (let i = 0; i < 10; i++) this.pickups.push(new Pickup('coin', tx + rand(-20, 20), ty + rand(-14, 14), 6));
-        this.fx.banner(p.x, p.y - 40, 'SUPPLIES SECURED', '#ffe066');
+        const coins = Math.max(5, Math.round(10 * v));
+        for (let i = 0; i < coins; i++) this.pickups.push(new Pickup('coin', tx + rand(-20, 20), ty + rand(-14, 14), 6));
+        this.fx.banner(p.x, p.y - 40, 'SUPPLIES SECURED (' + pct + '% VALUE)', '#ffe066');
         break;
+      }
       case 'passenger': {
         const lore = LORE[this.gameStats.kills % LORE.length];
         this.save.discovered = Array.from(new Set([...(this.save.discovered || []), lore.id]));
-        this.buffs.xpT = 45; this.buffs.xpMult = (this.buffs.xpMult || 1) * 1.08;
-        this.fx.banner(p.x, p.y - 40, 'PASSENGER SAVED +8% XP', '#c07aff');
+        const dur = Math.round(45 * v);
+        this.buffs.xpT = dur; this.buffs.xpMult = (this.buffs.xpMult || 1) * 1.08;
+        this.fx.banner(p.x, p.y - 40, 'PASSENGER SAVED +' + Math.round(8 * v) + '% XP ' + dur + 's', '#c07aff');
         this.fx.damageText(p.x, p.y - 58, '"' + lore.name.toUpperCase() + '"', '#dcb4ff', { size: 7 });
         break;
       }
       case 'purge':
         for (const pr of this.projectiles) if (pr.owner === 'enemy') pr.alive = false;
-        this.train.energy = Math.min(this.train.maxEnergy, this.train.energy + 20);
+        this.train.energy = Math.min(this.train.maxEnergy, this.train.energy + 20 * v);
         for (const e of this.enemiesInRange(tx, ty, 150)) {
-          this.dealDamage(e, 30 * p.atkDmg, { family: 'holy', small: true });
+          this.dealDamage(e, 30 * v * p.atkDmg, { family: 'holy', small: true });
         }
-        this.fx.banner(p.x, p.y - 40, 'ENEMY FIRE PURGED', '#8ef07a');
+        this.fx.banner(p.x, p.y - 40, 'ENEMY FIRE PURGED (' + pct + '% POWER)', '#8ef07a');
         break;
       case 'sigil':
-        p.heal(p.maxHp * 0.18);
+        p.heal(p.maxHp * 0.18 * v);
         this.pickups.push(new Pickup('chest', tx, ty, 1));
-        this.fx.banner(p.x, p.y - 40, 'SIGIL RESTORES 18% HP', '#ffb040');
+        this.fx.banner(p.x, p.y - 40, 'SIGIL RESTORES ' + Math.round(18 * v) + '% HP', '#ffb040');
         break;
     }
   }
@@ -1565,6 +1714,15 @@ export class GameplayScene {
       ctx.globalAlpha = 1;
       ctx.fillStyle = w.color;
       ctx.beginPath(); ctx.arc(w.x, w.y, 4, 0, TAU); ctx.fill();
+      // contested value ring: full circle = full value, draining as it fades
+      ctx.globalAlpha = 0.9;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(w.x, w.y, 17, -Math.PI / 2, -Math.PI / 2 + TAU * (w.value ?? 1));
+      ctx.stroke();
+      textC(ctx, Math.round((w.value ?? 1) * 100) + '%', w.x, w.y - 22, '#ffffff', 6, true);
+      ctx.globalAlpha = 1;
       this._light(w.x, w.y, 40, w.color, 0.7, 0.2);
     }
 
@@ -1588,6 +1746,19 @@ export class GameplayScene {
       textC(ctx, 'REWARD: ' + d.type.rewardText, d.x, d.y - 16, '#ffffff', 6, true);
       this._light(d.x, d.y, 50, '#ffe066', 0.8, 0.2);
       ctx.restore();
+    }
+
+    // ---- volatile ash: burning ground ----
+    for (const hz of this.hazards) {
+      const k = Math.min(1, hz.life / 2.6);
+      ctx.globalAlpha = 0.30 * k + 0.12;
+      ctx.fillStyle = '#ff5a20';
+      ctx.beginPath(); ctx.arc(hz.x, hz.y, hz.r, 0, TAU); ctx.fill();
+      ctx.globalAlpha = 0.5 * k;
+      ctx.strokeStyle = '#ffb060'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(hz.x, hz.y, hz.r, 0, TAU); ctx.stroke();
+      ctx.globalAlpha = 1;
+      this._light(hz.x, hz.y, 30, '#ff7a33', 0.4, 0.1);
     }
 
     // ---- draw order by Y ----
@@ -1707,11 +1878,24 @@ export class GameplayScene {
       out.fillRect(0, 0, CFG.VIEW_W, CFG.VIEW_H);
       if (this.themeT > 0) {
         const a = Math.min(1, Math.min(this.themeT, 0.6) * 2.5);
+        const hint = this.stage === 1 && !this._furnaceHintDone;
+        const ph = hint ? 34 : 24;
         out.globalAlpha = a * 0.85;
-        drawPanel(out, CFG.VIEW_W / 2 - 90, 20, 180, 24, this.theme.color);
+        drawPanel(out, CFG.VIEW_W / 2 - 90, 20, 180, ph, this.theme.color);
         out.globalAlpha = a;
         textC(out, 'SECTOR ' + this.stage + ' — ' + this.theme.name, CFG.VIEW_W / 2, 29, this.theme.color, 8, true);
         textC(out, this.theme.desc, CFG.VIEW_W / 2, 39, '#e8e2f0', 6);
+        if (hint) {
+          textC(out, 'KILL BESIDE THE TRAIN — [E] FURNACE BURST', CFG.VIEW_W / 2, 49, '#ffd040', 6, true);
+          if (this.train.furnace >= 20) this._furnaceHintDone = true;
+        }
+        out.globalAlpha = 1;
+      }
+      // the difficulty rule, stated plainly while the sector settles in
+      const rule = this.difficulty?.rule;
+      if (rule && rule.id !== 'none' && this.themeT > 0) {
+        out.globalAlpha = Math.min(1, Math.min(this.themeT, 0.6) * 2.5) * 0.95;
+        textC(out, 'RULE — ' + rule.name + ': ' + rule.desc, CFG.VIEW_W / 2, this.stage === 1 && !this._furnaceHintDone ? 59 : 51, '#ffb060', 6, true);
         out.globalAlpha = 1;
       }
     }
@@ -1890,6 +2074,9 @@ export class GameplayScene {
       ctx.scale(scale * squash, scale * (2 - squash));
     }
     ctx.drawImage(img, -Math.round(img.width / 2), -Math.round(img.height / 2) - 2);
+    // VARIANT DECOR — same body, different creature. Each recycled sprite
+    // gets drawn-on features so no two species ever read the same.
+    if (e.alive) this._drawVariant(ctx, e, img);
     ctx.restore();
     ctx.globalAlpha = 1;
     if (e.alive && e.hp < e.maxHp) {
@@ -1899,6 +2086,16 @@ export class GameplayScene {
       ctx.fillStyle = '#00000099'; ctx.fillRect(e.x - w / 2 - 1, y - 1, w + 2, 4);
       ctx.fillStyle = e.eliteMod ? '#ffb020' : '#ff4d4d';
       ctx.fillRect(e.x - w / 2, y, w * pct, 2);
+    }
+    // warden tag — these things guard waypoints (and pay 1.5x XP)
+    if (e.alive && e.warden && !e.eliteMod) {
+      ctx.fillStyle = '#ffe066';
+      ctx.beginPath();
+      ctx.moveTo(e.x, e.y + (e.radius + 6) * (e.scale || 1));
+      ctx.lineTo(e.x + 3, e.y + (e.radius + 3) * (e.scale || 1));
+      ctx.lineTo(e.x, e.y + e.radius * (e.scale || 1));
+      ctx.lineTo(e.x - 3, e.y + (e.radius + 3) * (e.scale || 1));
+      ctx.closePath(); ctx.fill();
     }
     // elite crown marker — a DIFFERENT shape and colour per modifier, so a
     // veteran reads the threat (and its answer) before it arrives
@@ -1964,6 +2161,100 @@ export class GameplayScene {
       }
       this._light(e.x, e.y, 26, crown.c, 0.4);
     }
+  }
+
+  // variant decorations, drawn in the enemy's local (scaled) space
+  _drawVariant(ctx, e, img) {
+    const w = img.width, h = img.height, t = this.runTime, fr = e.frame || 0;
+    switch (e.variant) {
+      case 'star': { // Star Wisp — rotating four-point star + twinkle
+        ctx.save();
+        ctx.rotate(t * 1.2);
+        ctx.fillStyle = '#ffe066';
+        for (let i = 0; i < 4; i++) {
+          const a = i * Math.PI / 2;
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(a) * h * 0.30, Math.sin(a) * h * 0.30 - 2);
+          ctx.lineTo(Math.cos(a + 0.28) * h * 0.42, Math.sin(a + 0.28) * h * 0.42 - 2);
+          ctx.lineTo(Math.cos(a - 0.28) * h * 0.42, Math.sin(a - 0.28) * h * 0.42 - 2);
+          ctx.closePath(); ctx.fill();
+        }
+        ctx.restore();
+        if (Math.random() < 0.2) {
+          ctx.fillStyle = '#fff8d0';
+          ctx.fillRect(rand(-4, 4) - 0.5, rand(-8, 2) - 0.5, 1.4, 1.4);
+        }
+        break;
+      }
+      case 'soul': { // Lost Soul — teal inner glow + drooping wisp tails
+        ctx.globalAlpha = 0.20;
+        ctx.fillStyle = '#7ad0c8';
+        ctx.beginPath(); ctx.arc(0, -1, h * 0.52, 0, TAU); ctx.fill();
+        ctx.globalAlpha = 0.75;
+        ctx.strokeStyle = '#7ad0c8'; ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(-2, h * 0.34);
+        ctx.quadraticCurveTo(-4 + Math.sin(t * 5) * 2, h * 0.52, -1 + Math.sin(t * 3) * 3, h * 0.66);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(2, h * 0.34);
+        ctx.quadraticCurveTo(4 + Math.cos(t * 4) * 2, h * 0.5, 2 + Math.cos(t * 3.4) * 3, h * 0.62);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        break;
+      }
+      case 'mirror': { // Mirror Wisp — faceted diamond shell + glints
+        ctx.strokeStyle = '#f4f0ff'; ctx.lineWidth = 1;
+        const r = h * 0.55;
+        ctx.beginPath();
+        ctx.moveTo(0, -r - 2); ctx.lineTo(r * 0.7, -2); ctx.lineTo(0, r); ctx.lineTo(-r * 0.7, -2);
+        ctx.closePath(); ctx.stroke();
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(-r * 0.35, -r * 0.45); ctx.lineTo(0, -r * 0.1); ctx.lineTo(r * 0.3, -r * 0.5);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        if (fr % 3 === 0) { ctx.fillStyle = '#ffffff'; ctx.fillRect(r * 0.2, -r * 0.7, 1.5, 1.5); }
+        break;
+      }
+      case 'lurker': { // Marsh Lurker — swaying reeds + moss cap
+        ctx.strokeStyle = '#4ad06a'; ctx.lineWidth = 1.5;
+        for (let i = -1; i <= 1; i++) {
+          const sway = Math.sin(t * 2.2 + i * 2.1) * 2.5;
+          ctx.beginPath();
+          ctx.moveTo(i * w * 0.22, -h * 0.36);
+          ctx.quadraticCurveTo(i * w * 0.22 + sway, -h * 0.55, i * w * 0.24 + sway * 1.6, -h * 0.72);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 0.35;
+        ctx.fillStyle = '#2e7a44';
+        ctx.beginPath(); ctx.ellipse(0, -h * 0.30, w * 0.34, h * 0.12, 0, 0, TAU); ctx.fill();
+        ctx.globalAlpha = 1;
+        break;
+      }
+      case 'maw': { // Slag Gobbler — a mouth that chews, teeth and all
+        const open = 0.5 + 0.5 * Math.sin(fr * 1.05); // chews with the walk cycle
+        const mw = w * 0.36, mh = h * (0.10 + 0.14 * open);
+        ctx.fillStyle = '#3a0d0d';
+        ctx.beginPath(); ctx.ellipse(0, h * 0.10, mw, mh, 0, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#e8e0d0';
+        for (let i = 0; i < 4; i++) {
+          const tx = -mw * 0.7 + i * (mw * 0.47);
+          ctx.beginPath();
+          ctx.moveTo(tx, h * 0.10 - mh * 0.8); ctx.lineTo(tx + mw * 0.16, h * 0.10 - mh * 0.8);
+          ctx.lineTo(tx + mw * 0.08, h * 0.10 - mh * 0.2); ctx.closePath(); ctx.fill();
+          ctx.beginPath();
+          ctx.moveTo(tx, h * 0.10 + mh * 0.8); ctx.lineTo(tx + mw * 0.16, h * 0.10 + mh * 0.8);
+          ctx.lineTo(tx + mw * 0.08, h * 0.10 + mh * 0.2); ctx.closePath(); ctx.fill();
+        }
+        ctx.fillStyle = '#fff0d0';
+        ctx.fillRect(-w * 0.22, -h * 0.28, 2, 2);
+        ctx.fillRect(w * 0.14, -h * 0.28, 2, 2);
+        break;
+      }
+      default: break;
+    }
+    ctx.lineWidth = 1;
   }
 
   _drawBoss(ctx, b) {
@@ -2288,13 +2579,31 @@ export class GameplayScene {
       wx += 22;
     }
 
-    // ---- train status (bottom-right) ----
-    const tw = 90, tx = W - tw - 6, ty = H - 26;
-    ctx.fillStyle = '#000000aa'; ctx.fillRect(tx - 2, ty - 2, tw + 4, 24);
+    // ---- train status (bottom-right) — furnace + carriage loadout on show ----
+    const tw = 90, tx = W - tw - 6, ty = H - 42;
+    ctx.fillStyle = '#000000aa'; ctx.fillRect(tx - 2, ty - 2, tw + 4, 40);
     text(ctx, this.train.set.skin.name.toUpperCase().slice(0, 14), tx, ty + 5, '#cfd4e0', 6, true);
     drawBar(ctx, tx, ty + 8, tw, 5, this.train.hp / this.train.maxHp, '#74c04a', '#0e2410');
     drawBar(ctx, tx, ty + 15, tw, 4, this.train.energy / this.train.maxEnergy, '#8ef0ff', '#101a2a');
-    if (this.train.overdrive) text(ctx, 'OVERDRIVE', tx + 20, ty + 24, '#ff4d6a', 6, true);
+    // furnace meter — the E-button promise, always visible
+    const fk = Math.min(1, this.train.furnace / this.train.furnaceMax);
+    drawBar(ctx, tx, ty + 21, tw, 4, fk, fk >= 1 ? '#ffd040' : '#c96a2a', '#241410');
+    if (fk >= 1 && !this.train.overdrive) {
+      const near = dist(p.x, p.y, this.train.x, this.train.y) < 90;
+      text(ctx, near ? 'E: FURNACE BURST!' : 'E — GET CLOSE TO TRAIN', tx, ty + 31,
+        near ? (Math.sin(this.runTime * 10) > 0 ? '#ffe066' : '#ffffff') : '#8a8a9c', 6, true);
+    } else if (this.train.overdrive) {
+      text(ctx, 'OVERDRIVE ' + Math.ceil(this.train.overdriveT) + 's', tx + 20, ty + 31, '#ff4d6a', 6, true);
+    }
+    // carriage icons — what your pick-2 actually is, mid-run
+    {
+      const iconMap = { gunsmith: 'gun', ammo: 'fan', medical: 'cross', engine: 'train', loot: 'coin', plating: 'shield' };
+      let cx = tx;
+      for (const cid of (this.train.carriageLoadout || [])) {
+        drawIcon(ctx, iconMap[cid] || 'dot', cx, ty - 12, 10, '#cfd4e0');
+        cx += 13;
+      }
+    }
 
     // ---- active buffs (compact) ----
     let by = H - 34;

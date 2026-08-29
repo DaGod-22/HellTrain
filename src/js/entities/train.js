@@ -48,8 +48,11 @@ export class Train {
     this.dmgMul = 1; this.fireRate = 1; this.energyRate = 1;
     this.repairRate = 0; this.ramDamage = 0; this.auraDamage = 0;
     this.lootBonus = 0; this.extraSlots = 0;
-    this.overdrive = false; this.warMachine = false; this.finalStop = false;
+    this.overdrive = false; this.overdriveT = 0; this.warMachine = false; this.finalStop = false;
     this.guardian = false; this.guardianCd = 0;
+    // THE FURNACE — kills stoke it (more when you fight beside the train);
+    // when full, the player can trigger a broadside Furnace Burst [E]
+    this.furnace = 0; this.furnaceMax = 100;
     this.invuln = 0; this.hitT = 0;
     this.t = 0;
 
@@ -94,6 +97,7 @@ export class Train {
   update(dt, ctx) {
     this.t += dt;
     if (this.invuln > 0) this.invuln -= dt;
+    if (this.overdriveT > 0) { this.overdriveT -= dt; if (this.overdriveT <= 0) this.overdrive = false; }
     if (this.hitT > 0) this.hitT -= dt;
     if (this.guardianCd > 0) this.guardianCd -= dt;
     if (this.repairRate) this.repair(this.repairRate * dt);
