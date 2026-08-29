@@ -25,9 +25,10 @@ export const FAMILY_INFO = {
   toxic: { name: 'Plague', color: '#98e066', icon: 'toxic', blurb: 'Lingering pools.' },
   blood: { name: 'Blood', color: '#ff3a4a', icon: 'blood', blurb: 'Drinks what it kills.' },
   shadow: { name: 'Shadow', color: '#9c8ab8', icon: 'shadow', blurb: 'Passes through armour.' },
-  spirit: { name: 'Spirit', color: '#a8d4f4', icon: 'echo', blurb: 'Returns to the hand.' },
+  spirit: { name: 'Echo', color: '#a8d4f4', icon: 'echo', blurb: 'Your shots, repeated.' },
   physical: { name: 'Force', color: '#d0d4e8', icon: 'crown', blurb: 'Raw impact.' },
   turret: { name: 'Siege', color: '#ff9a4a', icon: 'turret', blurb: 'Holds the ground.' },
+  arcane: { name: 'Arcane', color: '#e08aff', icon: 'charge', blurb: 'Slow, heavy, piercing.' },
   train: { name: 'Train', color: '#ffb040', icon: 'train', blurb: 'The iron horse.' },
 };
 

@@ -142,6 +142,18 @@ export const ASCENSIONS = [
     cond: (p) => p.hasWeapon('sawblade'),
     desc: (l) => l >= 4 ? `MASTERY! Level 5 ascends RICOCHET SAW into GHOST GRINDER` : `+1 level to Ricochet Saw (mastery at 5 = evolution)`,
     apply: (p) => p.upgradeWeapon('sawblade') }),
+  A({ id: 'focus_arcane', weapon: 'arcane_lance', name: 'Arcane Focus', icon: 'charge', rarity: 'rare', family: 'offence', max: 5,
+    cond: (p) => p.hasWeapon('arcane_lance'),
+    desc: (l) => l >= 4 ? `MASTERY! Level 5 ascends ARCANE LANCE into STARLANCE` : `+1 level to Arcane Lance (mastery at 5 = evolution)`,
+    apply: (p) => p.upgradeWeapon('arcane_lance') }),
+  A({ id: 'focus_sentry', weapon: 'sentry_kit', name: 'Sentry Focus', icon: 'turret', rarity: 'rare', family: 'offence', max: 5,
+    cond: (p) => p.hasWeapon('sentry_kit'),
+    desc: (l) => l >= 4 ? `MASTERY! Level 5 ascends SENTRY KIT into FORTRESS PROTOCOL` : `+1 level to Sentry Kit (mastery at 5 = evolution)`,
+    apply: (p) => p.upgradeWeapon('sentry_kit') }),
+  A({ id: 'focus_echo', weapon: 'echo_shard', name: 'Echo Focus', icon: 'echo', rarity: 'rare', family: 'offence', max: 5,
+    cond: (p) => p.hasWeapon('echo_shard'),
+    desc: (l) => l >= 4 ? `MASTERY! Level 5 ascends ECHO SHARD into CHORUS` : `+1 level to Echo Shard (mastery at 5 = evolution)`,
+    apply: (p) => p.upgradeWeapon('echo_shard') }),
 
   // ---------------- TIER 2 — mechanics ----------------
   A({ id: 'ember_heart', name: 'Ember Heart', icon: 'fire', rarity: 'rare', family: 'fire',

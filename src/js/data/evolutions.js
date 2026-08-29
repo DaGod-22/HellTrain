@@ -100,6 +100,40 @@ export const WEAPON_EVOLUTIONS = {
       w.projCount = (w.projCount || 1) + 1;
     },
   },
+  // ---- v1.4 evolutions: charge / deployable / echo ----
+  arcane_lance: {
+    id: 'star_lance', name: 'STARLANCE', color: '#ffd0ff', tagline: 'A STAR, ON A STICK',
+    apply: (w, p) => {
+      w.evolved = true; w.evolution = 'star_lance';
+      w.name = 'STARLANCE'; w.color = '#ffd0ff';
+      w.dmg = Math.round(w.dmg * 2.1);
+      w.chargeTime = Math.max(0.9, (w.chargeTime || 1.7) - 0.4);
+      w.explode = true;
+      w.explodeRadius = 38;
+      w.pierce = (w.pierce || 3) + 3;
+      p.modMult('atkSpd', 1.05);
+    },
+  },
+  sentry_kit: {
+    id: 'fortress_protocol', name: 'FORTRESS PROTOCOL', color: '#ffb06a', tagline: 'THE GROUND FIGHTS BACK',
+    apply: (w, p) => {
+      w.evolved = true; w.evolution = 'fortress_protocol';
+      w.name = 'FORTRESS PROTOCOL'; w.color = '#ffb06a';
+      w.dmg = Math.round(w.dmg * 1.6);
+      w.turretLife = (w.turretLife || 12) + 6;
+      w.turretCd = Math.max(0.3, (w.turretCd || 0.55) - 0.1);
+      // two turrets firing homing rockets (handled in the turret logic)
+    },
+  },
+  echo_shard: {
+    id: 'chorus', name: 'CHORUS', color: '#cfe8ff', tagline: 'EVERY SHOT, SUNG TWICE',
+    apply: (w, p) => {
+      w.evolved = true; w.evolution = 'chorus';
+      w.name = 'CHORUS'; w.color = '#cfe8ff';
+      w.echoMult = 1.0;
+      w.echoDelay = Math.max(0.3, (w.echoDelay || 0.7) - 0.15);
+    },
+  },
 };
 
 export function findEvolution(weaponId) {

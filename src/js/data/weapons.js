@@ -264,6 +264,35 @@ export const WEAPONS = [
       { id: 'phantom_shift', requires: ['shadow_core'], name: 'Phantom Shift', desc: 'Leaves attacking clones at both ends.' },
     ],
   }),
+  // ---- v1.4: three new mechanics — charge, deployable, echo ----
+  W({
+    id: 'arcane_lance', name: 'Arcane Lance', family: 'arcane', color: '#e08aff', sprite: 'orbVoid',
+    desc: 'Charges up, then fires a heavy piercing bolt.',
+    cd: 0.1, dmg: 26, speed: 460, projLife: 1.3, projSize: 7, pierce: 3,
+    behavior: 'charge', chargeTime: 1.7,
+    curve: (l) => ({ dmg: 26 + l * 9, chargeTime: Math.max(1.0, 1.7 - l * 0.08), pierce: 3 + Math.floor(l / 3) }),
+    evolutions: [
+      { id: 'star_lance', requires: ['void_core'], name: 'Starlance', desc: 'Charged bolts detonate in star-fire.' },
+    ],
+  }),
+  W({
+    id: 'sentry_kit', name: 'Sentry Kit', family: 'turret', color: '#ff9a4a', sprite: 'bomb',
+    desc: 'Deploys a gun turret that holds the ground for 12s.',
+    cd: 9.0, dmg: 9, behavior: 'turret', turretLife: 12, turretCd: 0.55,
+    curve: (l) => ({ dmg: 9 + l * 2.2, turretLife: 12 + l, turretCd: Math.max(0.3, 0.55 - l * 0.025) }),
+    evolutions: [
+      { id: 'fortress_protocol', requires: ['explosion_core'], name: 'Fortress Protocol', desc: 'Two turrets firing rockets.' },
+    ],
+  }),
+  W({
+    id: 'echo_shard', name: 'Echo Shard', family: 'spirit', color: '#a8d4f4', sprite: 'orbIce',
+    desc: 'Repeats your last shot a moment later, slightly weaker.',
+    cd: 0.9, dmg: 1, behavior: 'echo', echoMult: 0.6, echoDelay: 0.7,
+    curve: (l) => ({ echoMult: Math.min(1.0, 0.6 + l * 0.05), echoDelay: Math.max(0.3, 0.7 - l * 0.04) }),
+    evolutions: [
+      { id: 'chorus', requires: ['ice_core'], name: 'Chorus', desc: 'Every shot echoes twice, at full power.' },
+    ],
+  }),
 ];
 
 // ------------------------------------------------------------------

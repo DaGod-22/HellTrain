@@ -315,6 +315,23 @@ try {
       if (!(E.save.familyKills && Object.keys(E.save.familyKills).length)) fail('weapon mastery kills were not recorded');
       ok(`mastery + damage bookkeeping OK — ${Object.keys(E.save.familyKills || {}).length} families, ${Object.keys(gp.dmgByWeapon || {}).length} damage sources`);
 
+      // ---- new weapon mechanics: charge / turret / echo, through evolution ----
+      E._error = null;
+      E.setScene('gameplay', { save: E.save, realmId: 'purgatory', stage: 1 });
+      G.__pump(5);
+      const gp3 = E.current;
+      for (const wid of ['arcane_lance', 'sentry_kit', 'echo_shard']) {
+        gp3.player.addWeapon(wid);
+        for (let l = 0; l < 4; l++) gp3.player.upgradeWeapon(wid); // level 5 => evolves
+      }
+      G.__pump(60 * 6); // let them all fire in anger
+      if (E._error) fail('new weapon mechanics errored: ' + E._error.message);
+      const evolvedN = ['arcane_lance', 'sentry_kit', 'echo_shard']
+        .filter(wid => gp3.player.weapons.find(w => w.id === wid)?.evolved).length;
+      if (evolvedN !== 3) fail(`new weapons did not evolve at mastery 5 (${evolvedN}/3)`);
+      if (!gp3.player.turrets.length) fail('sentry turret never deployed');
+      ok('new weapons OK — charge/turret/echo fire and evolve');
+
       // ---- defeat path on a fresh run ----
       E._error = null;
       E.setScene('gameplay', { save: E.save, realmId: 'frozen', stage: 3 });

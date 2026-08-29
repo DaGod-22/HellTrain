@@ -5,6 +5,7 @@
 import { WEAPONS, ABILITIES, findWeapon } from '../data/weapons.js';
 import { findEvolution } from '../data/evolutions.js';
 import { rand, clamp, dist, TAU } from '../core/utils.js';
+import { SOUNDS } from '../core/sound.js';
 
 const DIRS = ['down', 'up', 'side'];
 
@@ -54,7 +55,8 @@ export class Player {
 
     // --- loadout ---
     this.weapons = []; this.weaponStates = {};
-    this.orbitals = []; this.drones = [];
+    this.orbitals = []; this.drones = []; this.turrets = [];
+    this.lastShot = null;           // ECHO SHARD: snapshot of the previous shot
     this.abilities = []; this.abilityStates = {};
     this.addAbility('dodge');
     this.t = 0;
@@ -345,6 +347,35 @@ export class Player {
         }
       }
     }
+    // sentry turrets (Sentry Kit): stationary, timed, autonomous
+    for (let i = this.turrets.length - 1; i >= 0; i--) {
+      const t = this.turrets[i];
+      t.life -= dt; t.t += dt; t.cd -= dt;
+      if (t.life <= 0) {
+        ctx.fx.burst(t.x, t.y, '#ff9a4a', 8, { spd: 70, life: 0.35 });
+        this.turrets.splice(i, 1);
+        continue;
+      }
+      if (t.cd <= 0) {
+        const e = ctx.findNearestEnemy(t.x, t.y, 160);
+        if (e) {
+          t.cd = t.w.turretCd || 0.55;
+          const a = Math.atan2(e.y - t.y, e.x - t.x);
+          t.ang = a;
+          const rock = !!t.w.evolved;
+          ctx.spawnProjectile({
+            x: t.x, y: t.y - 6,
+            vx: Math.cos(a) * (rock ? 170 : 260), vy: Math.sin(a) * (rock ? 170 : 260),
+            life: rock ? 1.6 : 1.0, dmg: t.w.dmg * (rock ? 2.2 : 1), pierce: 0,
+            color: '#ff9a4a', sprite: rock ? 'missile' : 'orbLight',
+            owner: 'player', size: rock ? 5 : 3, family: 'turret',
+            homing: rock ? 4 : 0, explode: rock, explodeRadius: rock ? 22 : 0,
+            weaponId: t.w.id, angle: a,
+          });
+          ctx.fx.sparks(t.x, t.y - 6, '#ff9a4a', 2, a);
+        }
+      }
+    }
   }
 
   dirKey() { return this.facing === 'left' || this.facing === 'right' ? 'side' : this.facing; }
@@ -387,6 +418,15 @@ export class Player {
     for (const w of this.weapons) {
       const s = this.weaponStates[w.id];
       if (w.behavior === 'orbital' || w.behavior === 'drones') continue;
+      // CHARGE shot: wind up, then release one heavy hit
+      if (w.behavior === 'charge') {
+        s.chargeT = (s.chargeT || 0) + dt * this.fireRateMult;
+        if (s.chargeT >= (w.chargeTime || 1.7)) {
+          if (enemy) { s.chargeT = 0; this._cast(ctx, w, s, enemy); }
+          else s.chargeT = Math.min(s.chargeT, w.chargeTime || 1.7);
+        }
+        continue;
+      }
       // burst continuation
       if (s.burst > 0) {
         s.burstT -= dt;
@@ -440,6 +480,62 @@ export class Player {
         break;
       }
       case 'teleport': this._blink(ctx, w); break;
+      case 'charge': {
+        // the big release: one fast, heavy, piercing bolt
+        const ang2 = enemy ? Math.atan2(enemy.y - this.y, enemy.x - this.x) : rand(0, TAU);
+        const speed = (w.speed || 460) * this.projSpeedMult;
+        ctx.spawnProjectile({
+          x: this.x, y: this.y - 4,
+          vx: Math.cos(ang2) * speed, vy: Math.sin(ang2) * speed,
+          life: w.projLife || 1.3, dmg: w.dmg, pierce: w.pierce || 3,
+          color: w.color, sprite: w.sprite, behavior: 'projectile',
+          owner: 'player', size: w.projSize || 7, family: w.family,
+          knockback: 160, weaponId: w.id, angle: ang2, spin: 6,
+        });
+        ctx.fx.ring(this.x, this.y - 4, 22, w.color, 0.3, 2);
+        ctx.fx.flash(this.x + Math.cos(ang2) * 12, this.y - 4 + Math.sin(ang2) * 12, w.color, 0.12, 14);
+        try { SOUNDS.shoot('lightning'); } catch {}
+        try { ctx.camera.shake(0.12); } catch {}
+        break;
+      }
+      case 'turret': {
+        // deployable sentry: holds the ground while you keep moving
+        const maxT = w.evolved ? 2 : 1;
+        while (this.turrets.length >= maxT) {
+          const old = this.turrets.shift();
+          try { ctx.fx.burst(old.x, old.y, '#ff9a4a', 6, { spd: 60, life: 0.3 }); } catch {}
+        }
+        const tx = this.x + rand(-12, 12), ty = this.y + rand(-8, 8);
+        this.turrets.push({ x: tx, y: ty, life: w.turretLife || 12, cd: 0.4, w, t: 0, ang: 0 });
+        ctx.fx.ring(tx, ty, 18, '#ff9a4a', 0.45, 2);
+        try { SOUNDS.explosion(0.5); } catch {}
+        break;
+      }
+      case 'echo': {
+        // repeats your last real shot, a beat later, slightly weaker
+        const ls = this.lastShot;
+        if (!ls) { s.cd = 0.25; break; }
+        const n = w.evolved ? 2 : 1;
+        const mult = w.evolved ? 1 : (w.echoMult || 0.6);
+        for (let k = 0; k < n; k++) {
+          ctx.spawnProjectile({
+            x: this.x, y: this.y - 4,
+            vx: Math.cos(ls.ang) * ls.speed * (1 + k * 0.08),
+            vy: Math.sin(ls.ang) * ls.speed * (1 + k * 0.08),
+            life: ls.life, dmg: ls.dmg * mult, pierce: ls.pierce,
+            color: '#a8d4f4', sprite: ls.sprite, behavior: 'projectile',
+            owner: 'player', size: ls.size, family: 'spirit',
+            knockback: 0, weaponId: 'echo_shard', angle: ls.ang,
+            explode: ls.explode, explodeRadius: ls.explodeRadius,
+            homing: ls.homing || 0, slow: ls.slow, slowDur: ls.slowDur,
+            omega: false, reflected: false,
+          });
+        }
+        ctx.fx.sparks(this.x, this.y - 4, '#a8d4f4', 3, ls.ang, 0.4, 100);
+        try { SOUNDS.shoot('ice'); } catch {}
+        s.cd = w.echoDelay || 0.7;
+        break;
+      }
       default: this._fireProjectiles(ctx, w, enemy, w.projCount || 1);
     }
   }
@@ -465,9 +561,21 @@ export class Player {
         knockback: w.knockback || this.knockback, weaponId: w.id, omega,
         lifesteal: w.lifesteal || 0, angle: ang, ...extra,
       });
+      // ECHO SHARD: remember the middle shot of the volley to repeat later
+      if (i === Math.floor((count - 1) / 2)) {
+        this.lastShot = {
+          ang, speed, dmg, pierce: (w.pierce || 0) + this.pierceBonus,
+          sprite: extra.sprite || w.sprite, life: w.projLife || 1.6,
+          size: (w.projSize || 5), explode: w.explode || false,
+          explodeRadius: (w.explodeRadius || 26) * (this.aoeMult || 1),
+          homing: extra.homing || 0, slow: extra.slow, slowDur: extra.slowDur,
+        };
+      }
     }
     ctx.fx.sparks(this.x + Math.cos(baseAng) * 8, this.y - 4 + Math.sin(baseAng) * 8, w.color || '#ffb040', 4, baseAng, 0.4, 120);
     ctx.fx.flash(this.x + Math.cos(baseAng) * 10, this.y - 4 + Math.sin(baseAng) * 10, w.color || '#ffb040', 0.07, 10);
+    // one voice per family on the big shots (rapid weapons stay quiet)
+    try { if ((w.cd || 1) >= 0.5) SOUNDS.shoot(w.family === 'ice' ? 'ice' : w.family === 'lightning' ? 'lightning' : w.family === 'orbital' ? 'orbital' : w.family === 'void' ? 'void' : 'fire'); } catch {}
   }
 
   _rail(ctx, w, enemy) {

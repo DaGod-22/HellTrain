@@ -1601,6 +1601,26 @@ export class GameplayScene {
       ctx.drawImage(f, Math.round(d.x - f.width / 2), Math.round(d.y - f.height / 2));
       this._light(d.x, d.y, 22, '#8ef0ff', 0.4);
     }
+    // sentry turrets — little box with a barrel that tracks
+    for (const t of p.turrets) {
+      ctx.save();
+      ctx.translate(Math.round(t.x), Math.round(t.y));
+      ctx.fillStyle = '#3a2a18';
+      ctx.fillRect(-5, -4, 10, 8);
+      ctx.fillStyle = '#ff9a4a';
+      ctx.fillRect(-4, -3, 8, 3);
+      ctx.rotate(t.ang || 0);
+      ctx.fillStyle = '#d8c8b0';
+      ctx.fillRect(0, -1.5, 9, 3);
+      ctx.restore();
+      // life ring
+      ctx.globalAlpha = 0.6;
+      ctx.strokeStyle = '#ff9a4a';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(t.x, t.y, 9, -Math.PI / 2, -Math.PI / 2 + TAU * Math.min(1, t.life / 12)); ctx.stroke();
+      ctx.globalAlpha = 1;
+      this._light(t.x, t.y, 26, '#ff9a4a', 0.5);
+    }
     for (const o of this.train.orbiters) {
       const f = A.anim.orbShadow[Math.floor(this.runTime * 10) % A.anim.orbShadow.length];
       ctx.drawImage(f, Math.round(o.x - f.width / 2), Math.round(o.y - f.height / 2));
@@ -2212,7 +2232,13 @@ export class GameplayScene {
       }
       ctx.fillStyle = '#000000aa'; ctx.fillRect(wx, H - 8, 16, 7);
       text(ctx, 'L' + st.level, wx + 2, H - 2, '#ffffff', 6, true);
-      if (st.cd > 0 && w.cd) {
+      if (w.behavior === 'charge') {
+        // charge gauge fills up instead of a cooldown draining
+        const k = Math.max(0, Math.min(1, (st.chargeT || 0) / (w.chargeTime || 1.7)));
+        ctx.fillStyle = '#000000aa'; ctx.fillRect(wx, H - 22, 16, 16);
+        ctx.fillStyle = k >= 1 ? '#ffd0ff' : '#e08aff';
+        ctx.fillRect(wx, H - 22 + 16 * (1 - k), 16, 16 * k);
+      } else if (st.cd > 0 && w.cd) {
         ctx.fillStyle = '#000000aa';
         const k = Math.max(0, Math.min(1, st.cd / w.cd));
         ctx.fillRect(wx, H - 22, 16, 16 * k);
