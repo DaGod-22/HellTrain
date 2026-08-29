@@ -320,7 +320,7 @@ export class ArsenalScene extends Page {
         icon: w.icon || 'star', iconColor: w.color, accent: w.color,
         name: w.name, tag: familyName(w.family).toUpperCase(),
         desc: `DMG ${Math.round(w.dmg)} · every ${(w.cd || 1).toFixed(2)}s · ${w.desc}`,
-        right: `M${'12345'[Math.max(0, (nextMilestone(kills)?.level || 6) - 2)]}` ,
+        right: (() => { const cur = nextMilestone(kills) ? nextMilestone(kills).level - 1 : 5; return cur > 0 ? 'M' + cur : 'NEW'; })(),
         rightColor: K.BLUE,
         hover: this.list.hoverIndex === i, selected: this.list.keyIndex === i || this.sel === i,
         appear: this.list.appearOf(i, this.pageT),

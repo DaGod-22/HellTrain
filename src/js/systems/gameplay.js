@@ -539,6 +539,7 @@ export class GameplayScene {
   _onBossKilled(b) {
     if (this.bossDefeated) return;
     this.bossDefeated = true;
+    this._bossGate = false;
     this.gameStats.bosses++;
     try { bumpGoal(this.save, 'boss', 1); } catch {}
     this.time.slowmo(1.6, 0.25);
@@ -768,7 +769,15 @@ export class GameplayScene {
   // ================================================================
   _openRouteCards() {
     this._ended = false;             // sector done, run continues
-    this.magnetAll = true; this._magnetT = 1.6;   // scoop up loose coins
+    // nothing is left behind: every loose pickup is banked right now
+    for (const u of this.pickups) {
+      if (!u.alive) continue;
+      if (u.type === 'coin') this.addRunCoins(u.amount || 1);
+      else if (u.type === 'xp' || u.type === 'xpBig') { try { this.player.gainXp(u.amount || 1); } catch {} }
+      else if (u.type === 'heart') { try { this.player.heal(u.amount || 10); } catch {} }
+      else if (u.type === 'chest') this.pendingLevelUps += 1;
+    }
+    this.pickups.length = 0;
     this.routeCards = { opts: routeOptions(this.stage + 1, this.runSeed), t: 0, idx: -1 };
     this.time.slowmo(1.2, 0.4);
     try { SOUNDS.chest(); } catch {}
@@ -840,6 +849,7 @@ export class GameplayScene {
     this._sectorWarned30 = false; this._sectorWarned10 = false;
     this.director = { t: 0, wave: 0, nextWave: 3, budget: 0, eliteT: 45 * (m.eliteMul || 1), chestT: m.chestFast ? 35 : 38 };
     this.boss = null; this.bossSpawned = false; this.bossDefeated = false;
+    this._bossGate = false;
     this.stopCard = 1.4;
     // new theme
     this.theme = themeOf(this.stage);
@@ -866,9 +876,14 @@ export class GameplayScene {
     }
     this.doorT -= dt;
     if (this.doorT <= 0 && this.director.t > 8 && !this.boss) {
-      const a = rand(0, TAU);
-      const px = this.player.x + Math.cos(a) * 110;
-      const py = this.player.y + Math.sin(a) * 110;
+      let px = 0, py = 0, ok = false;
+      for (let tries = 0; tries < 6 && !ok; tries++) {
+        const a = rand(0, TAU);
+        px = this.player.x + Math.cos(a) * 110;
+        py = this.player.y + Math.sin(a) * 110;
+        ok = !this.world.isSolidWorld(px, py);
+      }
+      if (!ok) { this.doorT = 4; return; }
       // pick the door type deterministically from the run seed
       let s = (this.runSeed ^ (this.stage * 0x85EB)) >>> 0;
       s = (s ^ (s << 13)) >>> 0; s = (s ^ (s >>> 17)) >>> 0; s = (s ^ (s << 5)) >>> 0;
@@ -1077,7 +1092,10 @@ export class GameplayScene {
     if(this.sectorTimeLeft <= 0 && !this._ended && !this.routeCards && this.transition <= 0){
       // If boss alive, must defeat boss, else move on
       if(this.boss?.alive){
-        this.fx.banner(this.player.x, this.player.y - 60, 'DEFEAT THE BOSS TO ESCAPE', '#ff4d6a');
+        if (!this._bossGate) {
+          this._bossGate = true;
+          this.fx.banner(this.player.x, this.player.y - 60, 'DEFEAT THE BOSS TO ESCAPE', '#ff4d6a');
+        }
         // keep timer at 0, don't end until boss dead
       } else if (!this.bossDefeated) {
         // boss never arrived — treat as a clear anyway
@@ -1672,6 +1690,19 @@ export class GameplayScene {
     this.fx.drawTexts(out, cam);
     // SECTOR IDENTITY: a light theme wash over the whole frame + intro panel
     if (this.theme) {
+      // FROSTLINE: slow aurora ribbons across the sky
+      if (this.theme.id === 'frostline') {
+        const W2 = CFG.VIEW_W;
+        for (let b = 0; b < 3; b++) {
+          ctx.globalAlpha = 0.05 + 0.03 * Math.sin(this.runTime * (0.7 + b * 0.23) + b * 2);
+          ctx.fillStyle = b % 2 ? '#7ec8ff' : '#98e066';
+          for (let x = 0; x < W2; x += 12) {
+            const h = 14 + Math.sin(x * 0.02 + this.runTime * (0.8 + b * 0.3) + b * 2) * 8;
+            ctx.fillRect(x, 34 + b * 22 + Math.sin(x * 0.03 + this.runTime + b) * 6, 12, h);
+          }
+        }
+        ctx.globalAlpha = 1;
+      }
       out.fillStyle = this.theme.tint;
       out.fillRect(0, 0, CFG.VIEW_W, CFG.VIEW_H);
       if (this.themeT > 0) {
