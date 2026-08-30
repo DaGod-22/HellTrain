@@ -11,6 +11,7 @@ const CONF = {
   heart:  { sprite: 'heart',  color: '#ff5a5a', score: 5 },
   chest:  { sprite: 'chest',  color: '#ffe066', score: 50 },
   magnet: { sprite: 'magnet', color: '#f080cc', score: 5 },
+  repair: { sprite: 'repair', color: '#ff6a5a', score: 5 },
 };
 
 export class Pickup {
@@ -78,6 +79,10 @@ export class Pickup {
         p.heal(this.amount);
         ctx.fx.damageText(this.x, this.y - 8, '+' + Math.round(this.amount), '#7eff9e', { size: 7 });
         p.score += c.score; break;
+      case 'repair':
+        p.heal(25);
+        ctx.fx.damageText(this.x, this.y - 8, '+25 HP', '#7eff9e', { size: 8 });
+        ctx.fx.ring(this.x, this.y, 18, '#3ee08a', 0.35, 2); break;
       case 'magnet':
         ctx.magnetPulse(); p.score += c.score; break;
       case 'chest':

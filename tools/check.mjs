@@ -306,7 +306,7 @@ try {
         stepRun(240);
       }
       if (E._error) fail('multi-sector run errored: ' + E._error.message);
-      if (E.current === gp) fail('final sector never resolved to a summary');
+      if (E.current === gp) fail(`final sector never resolved to a summary (stage=${gp.stage} cards=${!!gp.cards} route=${!!gp.routeCards} wPick=${!!gp.wPick} pend=${gp.pendingLevelUps} hitStop=${gp.hitStop} trans=${gp.transition} timeL=${Math.round(gp.sectorTimeLeft)} boss=${!!gp.boss} alive=${gp.player.alive} ended=${gp._ended})`);
       else ok(`run resolved after sector ${gp.maxSectors} — ${gp.runStats.kills} kills, ${guarded} overlays`);
       if (!(gp.dmgByWeapon && Object.keys(gp.dmgByWeapon).length)) fail('per-weapon damage was not recorded');
       if (!(E.save.familyKills && Object.keys(E.save.familyKills).length)) fail('weapon mastery kills were not recorded');
@@ -470,6 +470,65 @@ try {
       if (E.save.tutorialDone !== true) fail('tutorial did not set tutorialDone');
       if (E._error) fail('tutorial walkthrough errored: ' + E._error.message);
       ok('tutorial OK — 11 pages teach the whole line, then hands over the throttle');
+
+      // ---- v1.8.1: Flywheel Orbit + Rivet Gun replace the old slots ----
+      E._error = null;
+      E.setScene('gameplay', { save: E.save, realmId: 'purgatory', stage: 1 });
+      G.__pump(5);
+      const gpW = E.current;
+      gpW.player.addWeapon('orbital_blades');
+      gpW.player.upgradeWeapon('orbital_blades');
+      const wO = gpW.player.weapons.find(w => w.id === 'orbital_blades');
+      if (!wO || wO.name !== 'Flywheel Orbit') fail('Flywheel Orbit missing: ' + (wO && wO.name));
+      if (gpW.player.orbitals.length !== 2) fail(`Flywheel Orbit should orbit 2 gears, has ${gpW.player.orbitals.length}`);
+      G.__pump(30);
+      if (E._error) fail('flywheel orbit errored: ' + E._error.message);
+      gpW.player.addWeapon('plasma_blaster');
+      const wR = gpW.player.weapons.find(w => w.id === 'plasma_blaster');
+      if (!wR || wR.name !== 'Rivet Gun') fail('Rivet Gun missing: ' + (wR && wR.name));
+      const target = gpW.spawnEnemy(gpW.world.pickEnemyRoster(1)[0] || 'ghost', gpW.player.x + 60, gpW.player.y);
+      if (target) { target.maxHp = 99999; target.hp = 99999; } // soak rivets, don't die
+      // deterministic volley: cast the Rivet Gun directly at the soak target
+      const wR2 = gpW.player.weapons.find(w => w.id === 'plasma_blaster');
+      const sR2 = gpW.player.weaponStates['plasma_blaster'];
+      gpW.player._cast(gpW, wR2, sR2, target);
+      if (!gpW.projectiles.some(pr => pr.weaponId === 'plasma_blaster')) fail('Rivet Gun cast spawned no rivet projectile');
+      let dmgDealt = 0;
+      for (let i = 0; i < 120; i++) { G.__pump(1); dmgDealt = gpW.dmgByWeapon['plasma_blaster'] || 0; if (dmgDealt > 0) break; }
+      if (dmgDealt <= 0) fail(`Rivet Gun rivet never landed (dmg=${dmgDealt}, targetAlive=${target && target.alive}, tdist=${target ? Math.round(Math.hypot(target.x-gpW.player.x, target.y-gpW.player.y)) : '-'})`);
+      if (E._error) fail('rivet gun errored: ' + E._error.message);
+      ok('Flywheel Orbit (2 gears) + Rivet Gun (auto rivets) live');
+
+      // ---- v1.8.1: passives — Magnetic Polarity & Overdrive Pistons ----
+      E._error = null;
+      const upgMod = await importModule('js/data/upgrades.js');
+      const mag = upgMod.ASCENSIONS.find(c => c.id === 'magnetic_polarity');
+      const od = upgMod.ASCENSIONS.find(c => c.id === 'overdrive_pistons');
+      if (!mag || !String(mag.desc(2)).includes('50% pickup collection radius')) fail('Magnetic Polarity card missing or wrong: ' + (mag && mag.desc(2)));
+      if (!od || !String(od.desc(2)).includes('20% movement speed')) fail('Overdrive Pistons card missing or wrong: ' + (od && od.desc(2)));
+      if (upgMod.ASCENSIONS.some(c => c.id === 'swiftness')) fail('old Swiftness card still present — should be replaced');
+      if (String(upgMod.ASCENSIONS.find(c => c.id === 'greed').desc(1)).includes('pickup radius')) fail('Greed still grants pickup radius');
+      const range0 = gpW.player.pickupRange;
+      mag.apply(gpW.player, 2);
+      const range2 = gpW.player.pickupRange;
+      if (range2 < range0 * 1.49 || range2 > range0 * 1.51) fail(`Magnetic Polarity II should be +50%, got ${((range2 / range0 - 1) * 100).toFixed(1)}%`);
+      if (E._error) fail('passive cards errored: ' + E._error.message);
+      ok('Magnetic Polarity +25%/lvl and Overdrive Pistons in the grid');
+
+      // ---- v1.8.1: scrap barrels drop exactly one Repair Kit ----
+      E._error = null;
+      for (let i = 0; i < 60 * 14 && !gpW.barrels.some(b => b.alive); i++) G.__pump(1); // wait for the director to seed one
+      if (!gpW.barrels.some(b => b.alive)) fail('no scrap barrels spawned within 14s');
+      const b0 = gpW.barrels.find(b => b.alive);
+      const kitsBefore = gpW.pickups.filter(u => u.type === 'repair').length;
+      gpW._breakBarrel(b0);
+      const kitsAfter = gpW.pickups.filter(u => u.type === 'repair').length;
+      if (kitsAfter - kitsBefore !== 1) fail(`barrel dropped ${kitsAfter - kitsBefore} repair kits (want exactly 1)`);
+      // explosion chain-breaks barrels too
+      const b1 = gpW.barrels.find(b => b.alive);
+      if (b1) { b1.x = gpW.player.x + 30; b1.y = gpW.player.y; gpW.spawnExplosion(b1.x, b1.y, 40, 5, 'fire'); if (b1.alive) fail('explosion did not break the barrel'); }
+      if (E._error) fail('barrel errored: ' + E._error.message);
+      ok('scrap barrels OK — break by touch, shot, or blast; exactly 1 Repair Kit each');
 
       // ---- new weapon mechanics: charge / turret / echo, through evolution ----
       E._error = null;

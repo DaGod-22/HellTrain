@@ -217,6 +217,7 @@ export class GameplayScene {
 
     this.enemies = []; this.projectiles = []; this.pickups = [];
     this.meteors = []; this.flames = []; this.bombs = []; this.pools = []; this.holes = [];
+    this.barrels = []; this._barrelT = 3;
     this.boss = null; this.bossSpawned = false; this.bossDefeated = false;
 
     this.owned = {};                 // ascension id -> level
@@ -426,6 +427,9 @@ export class GameplayScene {
     this.fx.shakeScreen(3, 0.12);
     this.camera.shake(0.18);
     this.fx.decal(x, y, radius * 0.35, '#150a12', 8);
+    for (const b of this.barrels) {
+      if (b.alive && dist(x, y, b.x, b.y) < radius + b.r) this._breakBarrel(b);
+    }
     for (const e of this.enemiesInRange(x, y, radius)) {
       this.dealDamage(e, dmg, { family, x, y, knockback: 60 });
     }
@@ -682,6 +686,7 @@ export class GameplayScene {
         this.cards = rollCards(this.owned, p, this, n).filter(o=> o.card.req || o.card.rarity==='apocalypse');
         if(this.cards.length){ this.cardIndex=0; this.cardT=0; return; }
       }
+      this.cards = null;
       this.pendingLevelUps--;
       this._grantRandomWeapon();
       return;
@@ -700,6 +705,7 @@ export class GameplayScene {
     });
     this.cards = rolled.slice(0,n);
     if (!this.cards.length) {
+      this.cards = null;
       this.pendingLevelUps--;
       this._grantRandomWeapon();
       return;
@@ -950,6 +956,7 @@ export class GameplayScene {
     this.delayed.length = 0;
     this.holes.length = 0; this.meteors.length = 0; this.flames.length = 0;
     this.bombs.length = 0; this.pools.length = 0;
+    this.barrels.length = 0; this._barrelT = 2.5;
     // fresh ground for the new sector
     this.world = new World(this.runSeed ^ hashStr(this.realmId + this.stage), this.realmId, this.difficulty);
     const sp = this.world.playerSpawn;
@@ -1195,6 +1202,49 @@ export class GameplayScene {
   // ================================================================
   // DIRECTOR — continuous escalating waves
   // ================================================================
+  _breakBarrel(b) {
+    if (!b || !b.alive) return;
+    b.alive = false;
+    try { this.fx.disintegrate(b.x, b.y, '#ff9033', 10); } catch {}
+    this.fx.sparks(b.x, b.y, '#ffb060', 8);
+    this.fx.decal(b.x, b.y, 8, '#1c1210', 9);
+    this.pickups.push(new Pickup('repair', b.x, b.y, 1));   // exactly one Repair Kit, always
+    try { SOUNDS.chest(); } catch {}
+  }
+
+  _drawBarrels(ctx) {
+    for (const b of this.barrels) {
+      if (!b.alive) continue;
+      const rise = Math.min(1, b.t * 2.4);
+      const h = 14 * rise;
+      // ground shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.beginPath(); ctx.ellipse(b.x, b.y + 3, b.r + 1, (b.r + 1) * 0.5, 0, 0, TAU); ctx.fill();
+      // body — rusty cylinder, lit from the left
+      ctx.fillStyle = '#4a2e1a';
+      ctx.fillRect(Math.round(b.x - b.r), Math.round(b.y - h), b.r * 2, h);
+      ctx.fillStyle = '#6b4526';
+      ctx.fillRect(Math.round(b.x - b.r), Math.round(b.y - h), b.r, h);
+      // rust bands
+      ctx.fillStyle = '#33200f';
+      ctx.fillRect(Math.round(b.x - b.r), Math.round(b.y - h * 0.66), b.r * 2, 2);
+      ctx.fillRect(Math.round(b.x - b.r), Math.round(b.y - h * 0.33), b.r * 2, 2);
+      // top cap (2.5D)
+      ctx.fillStyle = '#7a5230';
+      ctx.beginPath(); ctx.ellipse(b.x, b.y - h, b.r, b.r * 0.45, 0, 0, TAU); ctx.fill();
+      ctx.strokeStyle = '#1a0e06'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.ellipse(b.x, b.y - h, b.r, b.r * 0.45, 0, 0, TAU); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(b.x - b.r, b.y - h); ctx.lineTo(b.x - b.r, b.y);
+      ctx.lineTo(b.x + b.r, b.y); ctx.lineTo(b.x + b.r, b.y - h);
+      ctx.stroke();
+      // hazard glint
+      ctx.fillStyle = `rgba(255,140,60,${(0.25 + 0.15 * Math.sin(this.runTime * 3 + b.seed)).toFixed(2)})`;
+      ctx.fillRect(Math.round(b.x - b.r + 2), Math.round(b.y - h + 2), 3, h - 4);
+      this._light(b.x, b.y - 6, 18, '#ff9033', 0.2);
+    }
+  }
+
   // v1.8 CAMERA DIRECTOR — one knob for shake + aberration + radial smear
   _impact(strength = 0.5, opts = {}) {
     const f = this.fx;
@@ -1285,6 +1335,43 @@ export class GameplayScene {
     }
     // boss timer
     if (!this.bossSpawned && (d.t > this.sectorDuration*0.7 || d.t > 90 + this.stage*10)) this._spawnBoss();
+
+    // ---- SCRAP BARRELS: breakable cover loot that drops Repair Kits ----
+    this._barrelT -= dt;
+    if (this._barrelT <= 0) {
+      this._barrelT = rand(5, 9);
+      const want = Math.min(7, 3 + this.stage);
+      if (this.barrels.length < want) {
+        for (let tries = 0; tries < 12; tries++) {
+          const a = rand(0, TAU), r = rand(150, 260);
+          const bx = this.player.x + Math.cos(a) * r, by = this.player.y + Math.sin(a) * r;
+          if (!this.world.isSolidWorld(bx, by)) {
+            this.barrels.push({ x: bx, y: by, r: 9, hp: 10, alive: true, t: 0, seed: rand(0, 100) });
+            break;
+          }
+        }
+      }
+    }
+    // player bump breaks a barrel; projectiles shred them (checked once here)
+    for (const b of this.barrels) {
+      if (!b.alive) continue;
+      b.t += dt;
+      if (this.player.alive && dist(this.player.x, this.player.y, b.x, b.y) < this.player.radius + b.r + 1) this._breakBarrel(b);
+    }
+    if (this.projectiles.length && this.barrels.length) {
+      for (const pr of this.projectiles) {
+        if (!pr.alive || pr.owner !== 'player') continue;
+        for (const b of this.barrels) {
+          if (!b.alive) continue;
+          if (dist(pr.x, pr.y, b.x, b.y) < (pr.size || 4) + b.r) {
+            b.hp -= 10; pr.alive = false;
+            this.fx.sparks(b.x, b.y, '#ffb060', 4);
+            if (b.hp <= 0) this._breakBarrel(b);
+            break;
+          }
+        }
+      }
+    }
 
     // ---- ESCALATION (stage 2+): CLOSING RING surges ----
     if (this.stage >= 4 && !lrn && !this.bossSpawned) {
@@ -1946,6 +2033,7 @@ export class GameplayScene {
 
     this._drawWorld(ctx);
     this.fx.drawDecals(ctx);
+    this._drawBarrels(ctx);
     this._drawAmbient(ctx, 0);
 
     // pools & holes (ground layer)
@@ -2055,16 +2143,36 @@ export class GameplayScene {
     for (const pl of this.pillars) {
       pl.t += 0.016;
       const rise = Math.min(1, pl.t * 1.4);
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = '#0a0612';
-      ctx.beginPath(); ctx.ellipse(pl.x, pl.y + 6, pl.r + 2, (pl.r + 2) * 0.5, 0, 0, TAU); ctx.fill();
+      const h = 18 * rise;
+      // ground shadow + hazard ring so the foot print reads instantly
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.beginPath(); ctx.ellipse(pl.x, pl.y + 4, pl.r + 2, (pl.r + 2) * 0.5, 0, 0, TAU); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,59,70,0.4)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.ellipse(pl.x, pl.y + 4, pl.r + 3, (pl.r + 3) * 0.5, 0, 0, TAU); ctx.stroke();
+      // extruded side (dark) + lit left edge
+      ctx.fillStyle = '#241e2c';
+      ctx.fillRect(Math.round(pl.x - pl.r), Math.round(pl.y - h), pl.r * 2, h);
+      ctx.fillStyle = '#362e42';
+      ctx.fillRect(Math.round(pl.x - pl.r), Math.round(pl.y - h), Math.max(3, pl.r * 0.7), h);
+      // hazard band
+      ctx.fillStyle = '#ff3b46';
+      ctx.fillRect(Math.round(pl.x - pl.r), Math.round(pl.y - h * 0.5), pl.r * 2, 2);
+      // top cap (2.5D face)
       ctx.fillStyle = pl.color;
-      ctx.globalAlpha = 0.9;
-      ctx.fillRect(pl.x - pl.r, pl.y - 14 * rise, pl.r * 2, 14 * rise);
-      ctx.fillStyle = '#ffffff55';
-      ctx.fillRect(pl.x - pl.r, pl.y - 14 * rise, pl.r * 2, 2);
-      ctx.globalAlpha = 1;
-      this._light(pl.x, pl.y - 6, 26, pl.color, 0.35);
+      ctx.beginPath(); ctx.ellipse(pl.x, pl.y - h, pl.r, pl.r * 0.45, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.28)';
+      ctx.beginPath(); ctx.ellipse(pl.x - pl.r * 0.25, pl.y - h - pl.r * 0.1, pl.r * 0.55, pl.r * 0.2, 0, 0, TAU); ctx.fill();
+      // ink outline for readability
+      ctx.strokeStyle = '#0c0a10'; ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(pl.x - pl.r, pl.y - h);
+      ctx.lineTo(pl.x - pl.r, pl.y);
+      ctx.lineTo(pl.x + pl.r, pl.y);
+      ctx.lineTo(pl.x + pl.r, pl.y - h);
+      ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(pl.x, pl.y - h, pl.r, pl.r * 0.45, 0, 0, TAU); ctx.stroke();
+      this._light(pl.x, pl.y - 6, 28, pl.color, 0.4);
     }
     // ---- boss ATTACK TELL: the signature flashes before it lands ----
     if (this.boss?.alive && this.boss._tell) {
@@ -2131,9 +2239,39 @@ export class GameplayScene {
     // orbitals & drones on top
     const p = this.player;
     for (const o of p.orbitals) {
-      const f = A.anim.sawBlade[Math.floor((this.runTime * 18 + o.ang * 3) % A.anim.sawBlade.length)];
-      ctx.drawImage(f, Math.round(o.x - f.width / 2), Math.round(o.y - f.height / 2));
-      this._light(o.x, o.y, 20, o.color, 0.35);
+      // FLYWHEEL ORBIT — pixel-art iron train gear, spinning as it rides
+      const rot = this.runTime * 4 * (o.spd > 0 ? 1 : -1) + o.ang;
+      const r = o.size + 2;
+      ctx.save();
+      ctx.translate(Math.round(o.x), Math.round(o.y));
+      // ground shadow
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.beginPath(); ctx.ellipse(0, r * 0.7, r * 0.8, r * 0.32, 0, 0, TAU); ctx.fill();
+      ctx.rotate(rot);
+      // teeth
+      ctx.fillStyle = '#8a8fa0';
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * TAU;
+        ctx.fillRect(Math.round(Math.cos(a) * (r - 2)) - 2, Math.round(Math.sin(a) * (r - 2)) - 2, 4, 4);
+      }
+      // rim + body
+      ctx.beginPath(); ctx.arc(0, 0, r - 1, 0, TAU); ctx.fillStyle = '#5a5e6e'; ctx.fill();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = '#1a1a24'; ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, r - 4, 0, TAU); ctx.fillStyle = '#454a58'; ctx.fill();
+      // spokes
+      ctx.strokeStyle = '#2c2f3a'; ctx.lineWidth = 2;
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * (r - 4), Math.sin(a) * (r - 4));
+        ctx.lineTo(-Math.cos(a) * (r - 4), -Math.sin(a) * (r - 4));
+        ctx.stroke();
+      }
+      // crimson hub bolt
+      ctx.beginPath(); ctx.arc(0, 0, 2.6, 0, TAU); ctx.fillStyle = '#ff3b46'; ctx.fill();
+      ctx.strokeStyle = '#1a1a24'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.restore();
+      this._light(o.x, o.y, 20, '#ffb060', 0.35);
     }
     for (const d of p.drones) {
       const f = A.anim.orbPlasma[Math.floor(this.runTime * 12) % A.anim.orbPlasma.length];
@@ -2683,17 +2821,50 @@ export class GameplayScene {
 
   _drawPickup(ctx, u) {
     const A = this.art;
+    // REPAIR KIT — steel box with a crimson cross, no sprite sheet needed
+    if (u.type === 'repair') {
+      const bob = Math.sin(u.t * 6) * 1.5;
+      const x = Math.round(u.x), y = Math.round(u.y + bob);
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.beginPath(); ctx.ellipse(x, y + 7, 7, 3, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#3e4450'; ctx.fillRect(x - 6, y - 5, 12, 11);
+      ctx.fillStyle = '#565e6e'; ctx.fillRect(x - 6, y - 5, 12, 3);
+      ctx.fillStyle = '#ff3b46';
+      ctx.fillRect(x - 1.5, y - 3, 3, 8);
+      ctx.fillRect(x - 4, y - 0.5, 8, 3);
+      ctx.strokeStyle = '#10141c'; ctx.lineWidth = 1.2;
+      ctx.strokeRect(x - 6, y - 5, 12, 11);
+      this._light(u.x, u.y, 16, '#3ee08a', 0.3);
+      return;
+    }
     const frames = A.anim[u.spriteKey()] || A.anim.xp;
     const f = frames[Math.floor(u.frame) % frames.length];
     const bob = Math.sin(u.t * 6) * 1.5;
     ctx.drawImage(f, Math.round(u.x - f.width / 2), Math.round(u.y - f.height / 2 + bob));
-    if (u.type === 'coin' || u.type === 'chest' || u.type === 'heart') {
+    if (u.type === 'coin' || u.type === 'chest' || u.type === 'heart' || u.type === 'repair') {
       this._light(u.x, u.y, 14, u.color(), 0.35);
     }
   }
 
   _drawProjectile(ctx, pr) {
     const A = this.art;
+    // RIVET GUN: high-velocity steel spike drawn along its flight vector
+    if (pr.weaponId === 'plasma_blaster') {
+      const ang = Math.atan2(pr.vy, pr.vx);
+      ctx.save();
+      ctx.translate(pr.x, pr.y); ctx.rotate(ang);
+      ctx.fillStyle = '#d8dce8';
+      ctx.fillRect(-5, -1.5, 10, 3);
+      ctx.fillStyle = '#8a8fa0';
+      ctx.fillRect(-6, -2.5, 2.5, 5);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(2, -1, 3, 1);
+      ctx.strokeStyle = '#14141c'; ctx.lineWidth = 1;
+      ctx.strokeRect(-6, -2.5, 12, 5);
+      ctx.restore();
+      this._light(pr.x, pr.y, 12, '#9fd8e8', 0.3);
+      return;
+    }
     const key = pr.sprite && A.anim[pr.sprite] ? pr.sprite : null;
     // enemy fire always gets a dark ring so it reads as THREAT instantly
     if (pr.owner === 'enemy') {
@@ -2763,10 +2934,27 @@ export class GameplayScene {
         const px = x * ts, py = y * ts;
         const n = ((x * 73856093) ^ (y * 19349663)) & 7;
         if (t === T.WALL) {
-          ctx.fillStyle = realm.accent; ctx.fillRect(px, py, ts, ts);
-          ctx.fillStyle = '#00000055'; ctx.fillRect(px + 1, py + 1, ts - 2, ts - 2);
-          ctx.fillStyle = realm.accent; ctx.fillRect(px + 2, py + 2, ts - 5, ts - 5);
-          ctx.fillStyle = '#ffffff10'; ctx.fillRect(px + 2, py + 2, ts - 5, 2);
+          // v1.8: walls read as raised blocks — dark body, lit top face,
+          // bevel edges, and a bright cap where the wall ends
+          const belowWall = this.world.tileAtWorld(wx, wy + ts) === T.WALL;
+          ctx.fillStyle = '#191420';
+          ctx.fillRect(px, py, ts, ts);
+          const faceH = belowWall ? ts : ts - 5;
+          ctx.fillStyle = '#2e2838';
+          ctx.fillRect(px, py, ts, faceH);
+          ctx.fillStyle = '#3d3549';
+          ctx.fillRect(px, py, ts, Math.max(2, faceH * 0.45));
+          // top cap highlight on exposed edges
+          if (!belowWall) {
+            ctx.fillStyle = '#574b66';
+            ctx.fillRect(px, py, ts, 4);
+            ctx.fillStyle = 'rgba(255,255,255,0.22)';
+            ctx.fillRect(px, py, ts, 1.5);
+          }
+          // ink grid seams
+          ctx.strokeStyle = 'rgba(8,6,12,0.9)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(px + 0.5, py + 0.5, ts - 1, ts - 1);
         } else if (t === T.TREE) {
           ctx.fillStyle = floorOf(this.realmId, n); ctx.fillRect(px, py, ts, ts);
           ctx.fillStyle = '#1a1208'; ctx.fillRect(px + 6, py + 6, 4, 10);

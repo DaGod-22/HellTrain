@@ -23,13 +23,13 @@ export const WEAPONS = [
     ],
   }),
   W({
-    id: 'orbital_blades', name: 'Orbital Blades', family: 'orbital', color: '#d0d4e8', sprite: 'sawBlade',
-    slot: 'orbital', icon: 'blade',
-    desc: 'Spectral blades orbit you, shredding anything they touch.',
-    cd: 0, dmg: 9, projSize: 6, pierce: 99, behavior: 'orbital',
-    baseRadius: 40, baseSpeed: 3.6, baseCount: 2, baseSize: 7,
-    curve: (l) => ({ dmg: 9 + l * 1.8, baseCount: Math.min(4, 2 + Math.floor(l / 4)),
-      baseRadius: 40 + Math.min(30, l * 1.5), baseSpeed: 3.6 + l * 0.06 }),
+    id: 'orbital_blades', name: 'Flywheel Orbit', family: 'orbital', color: '#c8ccd8', sprite: 'sawBlade',
+    slot: 'orbital', icon: 'turret',
+    desc: 'Two spinning iron train gears revolve around you, grinding anything that gets close.',
+    cd: 0, dmg: 10, projSize: 6, pierce: 99, behavior: 'orbital',
+    baseRadius: 42, baseSpeed: 3.4, baseCount: 2, baseSize: 8,
+    curve: (l) => ({ dmg: 10 + l * 2, baseCount: Math.min(4, 2 + Math.floor(l / 4)),
+      baseRadius: 42 + Math.min(28, l * 1.5), baseSpeed: 3.4 + l * 0.06 }),
     evolutions: [
       { id: 'eclipse_ring', requires: ['eclipse_core'], name: 'Eclipse Ring', desc: 'Blades launch outward on a timer.' },
       { id: 'storm_ring', requires: ['lightning'], name: 'Storm Ring', desc: 'Every blade arcs lightning.' },
@@ -38,13 +38,13 @@ export const WEAPONS = [
 
   // ---------------- BLASTERS ----------------
   W({
-    id: 'plasma_blaster', name: 'Plasma Blaster', family: 'plasma', color: '#2ff0ff', sprite: 'orbPlasma',
+    id: 'plasma_blaster', name: 'Rivet Gun', family: 'plasma', color: '#9fd8e8', sprite: 'railSlug',
     slot: 'primary', icon: 'blaster',
-    desc: 'Full-auto plasma. Three-round bursts that punch through crowds.',
-    cd: 1.05, dmg: 8, speed: 300, projLife: 1.2, projSize: 4, pierce: 1,
-    behavior: 'burst', burstCount: 3, burstDelay: 0.07, projCount: 1, spread: 0.06,
-    curve: (l) => ({ cd: Math.max(0.45, 1.05 - l * 0.04), dmg: 8 + l * 2.0,
-      burstCount: Math.min(5, 3 + Math.floor(l / 5)), pierce: Math.min(3, 1 + Math.floor(l / 6)) }),
+    desc: 'Automatic steel rivets at the nearest horror. High velocity, punches through one target.',
+    cd: 0.9, dmg: 9, speed: 430, projLife: 1.1, projSize: 4, pierce: 1,
+    behavior: 'burst', burstCount: 2, burstDelay: 0.06, projCount: 1, spread: 0.03,
+    curve: (l) => ({ cd: Math.max(0.4, 0.9 - l * 0.04), dmg: 9 + l * 2.2,
+      burstCount: Math.min(4, 2 + Math.floor(l / 5)), pierce: Math.min(3, 1 + Math.floor(l / 6)) }),
     evolutions: [
       { id: 'ion_stormfront', requires: ['thunder_core'], name: 'Ion Stormfront', desc: 'Bolts chain and overcharge.' },
       { id: 'annihilator', requires: ['void_core'], name: 'Annihilator', desc: 'Infinite pierce, void detonations.' },

@@ -156,3 +156,13 @@ Ground rules kept in mind throughout: one self-contained page, no gambling (ever
 - TUTORIAL: 11-page Conductor's Handbook (move, XP/ascension, weapons/evolution, furnace, ultimate, shards, coins, sectors, leaderboards) — auto-opens for new conductors, re-readable from the System Deck; skip button + progress dots.
 - LEARNING PHASE: _learn() gates sectors 1-3 — S1 basics-only (2 species, no elites/surges/lieutenant, soft boss), S2 introduces elites+chests, S3 introduces the Gauntlet lieutenant; full chaos from sector 4. Sector-intro panel prints the teaching line.
 - MASTER PALETTE: K now matte obsidian / iron charcoal / volcanic crimson / plasma blue / high-vis cyan (K.CRIM, K.PLASMA, K.CYAN); PauseScene + steelBackdrop rebuilt in the metallic terminal language.
+
+## v1.9.0 — standard survival upgrade pack (DONE)
+- FLYWHEEL ORBIT (replaces Orbital Blades): two pixel-art iron train gears (crimson hub, 8 spokes) revolve the conductor, grinding anything that gets close; grows count/radius with level. Focus card: FLYWHEEL FOCUS (turret icon).
+- RIVET GUN (replaces Plasma Blaster): auto-fires high-velocity steel rivets at the nearest enemy — 2-round burst, punches through 1 target, faster + harder with level. Fires a spinning steel rail-slug sprite. Focus card: RIVET FOCUS (gun icon).
+- MAGNETIC POLARITY (replaces Greed's radius line): +25% pickup collection radius per level; GREED is now coins-only.
+- OVERDRIVE PISTONS (replaces Swiftness): +10% movement speed per level (boot icon).
+- SCRAP BARRELS: the sector director seeds up to 7 breakable rusty 2.5D cylinders on free floor; bullets and explosions crack them open (chain reactions work) — each drops exactly one REPAIR KIT (+25 HP, steel box, crimson cross, green pulse ring, own light).
+- OBSTACLE READABILITY: pillars are now proper 2.5D — ground shadow, glowing hazard ring, extruded side walls, hazard band, lit cap, ink outline. WALL tiles read as raised blocks (body/face/lit cap on exposed edges, ink seams).
+- ICON LANGUAGE: added first-class pixel icons for turret / magnet / gun keys (previously fell through to a generic dot).
+- SOFT-LOCK FIX: empty Ascension hand during capped level-ups no longer freezes the sector (pending level-ups now fall through to the weapon-grant overlay).

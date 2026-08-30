@@ -142,6 +142,10 @@ export function drawIcon(ctx, kind, x, y, s = 16, color = '#ffffff') {
     case 'cross': R(6, 2, 4, 12); R(2, 6, 12, 4); break;
     case 'candle': R(7, 2, 2, 3); R(5, 6, 6, 8); break;
     case 'train': R(2, 6, 12, 5); R(4, 3, 5, 3); R(3, 11, 3, 3); R(9, 11, 3, 3); break;
+    // v1.9: first-class pixel icons for the new Ascension keys
+    case 'turret': R(3, 11, 10, 3); R(5, 9, 6, 2); R(7, 4, 2, 5); R(9, 5, 4, 2); break; // base + dome + barrel
+    case 'magnet': R(4, 3, 3, 7); R(9, 3, 3, 7); R(4, 10, 8, 2); R(4, 3, 3, 2); R(9, 3, 3, 2); break; // U-magnet
+    case 'gun': R(3, 6, 9, 3); R(10, 6, 3, 2); R(5, 9, 3, 5); R(9, 4, 2, 2); break; // pistol + sight
     case 'gear': ctx.beginPath(); ctx.arc(8, 8, 5, 0, TAU); ctx.fill();
       ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.beginPath(); ctx.arc(8, 8, 2, 0, TAU); ctx.fill(); break;
     case 'dash': R(2, 5, 7, 2); R(4, 9, 7, 2); R(10, 3, 4, 2); R(11, 11, 3, 2); break;
