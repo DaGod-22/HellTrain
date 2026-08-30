@@ -1,0 +1,11 @@
+{
+  "name": "hell-train",
+  "private": true,
+  "version": "1.4.0",
+  "type": "module",
+  "description": "HELL TRAIN — single-file pixel roguelite. Build with tools/build.py, check with npm run check.",
+  "scripts": {
+    "build": "python3 tools/build.py",
+    "check": "node tools/check.mjs"
+  }
+}
