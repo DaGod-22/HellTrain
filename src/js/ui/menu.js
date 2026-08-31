@@ -98,6 +98,7 @@ class Page {
     this.t = 0; this.pageT = 0; this.toast = null;
     this._grace = 0.15;               // swallow the click that opened this page
     this._mouse.wheel = 0;
+    this._mouse.justDown = false;     // the opening click belongs to the last page
   }
   exit() { saveSave(this.save); this.engine.resetResolution?.(); }
   hit(r) { return inRect(this._mouse, r); }
@@ -162,7 +163,8 @@ export class MenuScene extends Page {
     const m = super.base(dt);
     if (!m) return;
     this._rows();
-    const act = this.feedList(this.list, m);
+    // `let`, not `const`: the line below falls back to the highlighted row.
+    let act = this.feedList(this.list, m);
     // hover
     this.list.hoverIndex = -1;
     for (const [a, b] of [this.list.visibleRange()]) {
@@ -1731,14 +1733,22 @@ export class TutorialScene extends Page {
   update(dt) {
     const m = super.base(dt);
     if (!m) return;
-    if (m.justDown && !this.grace(dt)) {
+    // grace() must be ticked on EVERY frame, not only on the frame a click
+    // lands — otherwise the 0.15s open-guard never expires and the buttons
+    // swallow the first ~9 clicks of the session.
+    const blocked = this.grace(dt);
+    if (m.justDown && !blocked) {
+      // one physical click = one action: clear it before any early return,
+      // or NEXT would fire again on the next frame and skip a page.
+      m.justDown = false;
       if (this.hit(this._skipRect())) return this._finish();
       if (this.hit(this._nextRect())) return this._next();
-      for (let i = 0; i < TUTORIAL_STEPS.length; i++) if (this.hit(this._dotRect(i))) { this.step = i; m.justDown = false; return; }
+      for (let i = 0; i < TUTORIAL_STEPS.length; i++) if (this.hit(this._dotRect(i))) { this.step = i; return; }
       if (!this.hit(PANEL_RECT)) this._next();
     }
-    if (this.input?.wasPressed?.('Enter') || this.input?.wasPressed?.('Space')) this._next();
-    if (this.input?.wasPressed?.('Escape')) this._finish();
+    // keyboard: pages use engine.input (this.input is undefined on a Page)
+    const inp = this.engine.input;
+    if (inp?.wasPressed?.('Enter') || inp?.wasPressed?.('Space')) return this._next();
     if (!m.down) this._press = null;
     m.justDown = false;
   }

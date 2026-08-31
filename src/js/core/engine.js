@@ -75,6 +75,10 @@ export class Engine {
         console.error('update error', e);
         this._error = e;
       }
+      // One-frame input flags (justPressed / justDown) are cleared here so every
+      // scene sees each key press and click exactly once. Gameplay ticks this
+      // itself; menu pages do not, so without it a single press repeats forever.
+      try { this.input?.endFrame?.(); } catch {}
       try {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         if(this._error){

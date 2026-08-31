@@ -166,3 +166,11 @@ Ground rules kept in mind throughout: one self-contained page, no gambling (ever
 - OBSTACLE READABILITY: pillars are now proper 2.5D — ground shadow, glowing hazard ring, extruded side walls, hazard band, lit cap, ink outline. WALL tiles read as raised blocks (body/face/lit cap on exposed edges, ink seams).
 - ICON LANGUAGE: added first-class pixel icons for turret / magnet / gun keys (previously fell through to a generic dot).
 - SOFT-LOCK FIX: empty Ascension hand during capped level-ups no longer freezes the sector (pending level-ups now fall through to the weapon-grant overlay).
+
+## v1.9.1 — tutorial buttons + one-press input (DONE)
+- TUTORIAL NEXT / SKIP were dead: `TutorialScene.update` only ticked `grace(dt)` on the frame a click landed, so the 0.15s page-open guard never expired and the first ~9 clicks were swallowed. Grace now decays every frame like every other page.
+- One click no longer fires twice: `_next()` / `_finish()` returned before `justDown` was cleared, so a single NEXT tap skipped two handbook pages.
+- TUTORIAL keyboard is live again: Enter/Space page forward (the branch read `this.input`, which does not exist on a `Page` — pages use `engine.input`).
+- INPUT FRAME: `Engine` now clears one-frame input flags (`justPressed` / `justDown`) after every scene update. Menu pages never called `Input.endFrame()`, so a single arrow-key press repeated on every frame.
+- HUB FIX: `MenuScene` reassigned a `const act`, which threw "Assignment to constant variable" and blanked the MORE page the moment a row was keyboard-highlighted — masked until the input frame above was fixed.
+- `tools/check.mjs` now drives the handbook with real canvas mouse events and window key events (NEXT, SKIP, SPACE, page dots, hub arrows + ENTER) instead of calling `_next()` directly, so this class of bug cannot ship again.

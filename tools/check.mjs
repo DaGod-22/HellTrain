@@ -183,9 +183,18 @@ function stubGlobals() {
   const g = globalThis;
   g.__frameCbs = [];
   g.window = g;
-  g.addEventListener = g.addEventListener || (() => {});
-  g.removeEventListener = g.removeEventListener || (() => {});
-  g.dispatchEvent = g.dispatchEvent || (() => true);
+  // Node has no window event target — stand in for it so keyboard/mouse events
+  // dispatched by the checks reach the real listeners (Input, scene handlers).
+  const winListeners = {};
+  g.addEventListener = (t, fn) => { (winListeners[t] = winListeners[t] || []).push(fn); };
+  g.removeEventListener = (t, fn) => { const a = winListeners[t]; if (a) { const i = a.indexOf(fn); if (i >= 0) a.splice(i, 1); } };
+  g.dispatchEvent = (ev) => { for (const fn of winListeners[ev.type] || []) fn(ev); return true; };
+  // a full keypress: down + up, exactly as a browser delivers one
+  g.__press = (code) => {
+    const mk = (type) => ({ type, code, preventDefault() {}, stopPropagation() {} });
+    g.dispatchEvent(mk('keydown'));
+    g.dispatchEvent(mk('keyup'));
+  };
   g.document = document;
   g.localStorage = store;
   try { Object.defineProperty(g, 'navigator', { value: { userAgent: 'helltrain-check' }, configurable: true }); }
@@ -470,6 +479,74 @@ try {
       if (E.save.tutorialDone !== true) fail('tutorial did not set tutorialDone');
       if (E._error) fail('tutorial walkthrough errored: ' + E._error.message);
       ok('tutorial OK — 11 pages teach the whole line, then hands over the throttle');
+
+      // ---- v1.9.1 regression: NEXT / SKIP must answer REAL clicks ----
+      // The walkthrough above calls _next() directly, so it cannot catch an
+      // input bug. Drive the scene through the canvas event listeners instead.
+      E._error = null;
+      E.save.tutorialDone = false;
+      E.setScene('tutorial', { save: E.save });
+      G.__pump(20); // let the 0.15s page-open guard expire, like a human pause
+      const tutC = E.current;
+      const cv = E.canvas;
+      const clickAt = (r) => {
+        const x = r.x + r.w / 2, y = r.y + r.h / 2;
+        cv.dispatch('mousemove', { clientX: x, clientY: y, button: 0 });
+        cv.dispatch('mousedown', { clientX: x, clientY: y, button: 0 });
+        G.__pump(1);
+        cv.dispatch('mouseup', { clientX: x, clientY: y, button: 0 });
+        G.__pump(1);
+      };
+      if (tutC.constructor.name !== 'TutorialScene') fail('tutorial scene did not open for the click test');
+      else {
+        const s0 = tutC.step;
+        clickAt(tutC._nextRect());
+        if (E._error) fail('tutorial NEXT click errored: ' + E._error.message);
+        if (tutC.step !== s0 + 1) fail(`NEXT click did not advance the page (step ${s0} -> ${tutC.step}, want ${s0 + 1})`);
+        G.__pump(10); // a stuck justDown would fire the button again on later frames
+        if (tutC.step !== s0 + 1) fail(`one NEXT click fired more than once (step ${tutC.step}, want ${s0 + 1})`);
+        const s1 = tutC.step;
+        G.__press('Space');
+        G.__pump(2);
+        if (tutC.step !== s1 + 1) fail(`SPACE did not page the tutorial forward (step ${tutC.step}, want ${s1 + 1})`);
+        G.__pump(4);
+        if (tutC.step !== s1 + 1) fail(`SPACE held the page turning every frame (step ${tutC.step}, want ${s1 + 1})`);
+        const s2 = tutC.step;
+        const dot = tutC._dotRect(Math.min(s2 + 2, 10));
+        clickAt(dot);
+        if (tutC.step !== Math.min(s2 + 2, 10)) fail(`progress dot did not jump the page (step ${tutC.step})`);
+        clickAt(tutC._skipRect());
+        if (E.current === tutC) fail('SKIP click did not leave the tutorial');
+        if (E.save.tutorialDone !== true) fail('SKIP did not mark the handbook as read');
+        if (E._error) fail('tutorial SKIP click errored: ' + E._error.message);
+        if (!failures) ok('tutorial buttons OK — NEXT, SKIP, SPACE and the page dots all answer real clicks');
+      }
+
+      // ---- v1.9.1 regression: one key press = one action on every page ----
+      // Menu pages never ticked Input.endFrame(), so a single press repeated
+      // on every frame until some other scene cleared it. The engine now clears
+      // one-frame input flags at the end of each frame.
+      E._error = null;
+      E.setScene('hub', { save: E.save });
+      G.__pump(20);
+      const hubPg = E.current;
+      hubPg.list.keyIndex = -1;
+      G.__press('ArrowDown');
+      G.__pump(1);
+      const ki = hubPg.list.keyIndex;
+      G.__pump(20);
+      if (ki !== 1) fail(`ArrowDown did not move the list selection (keyIndex ${ki}, want 1)`);
+      else if (hubPg.list.keyIndex !== ki) fail(`one ArrowDown kept repeating (keyIndex ${hubPg.list.keyIndex}, want ${ki})`);
+      // Enter must activate the highlighted row — this line used to throw
+      // "Assignment to constant variable" and blank the page.
+      const wantScene = hubPg.rows[hubPg.list.keyIndex]?.scene;
+      G.__press('Enter');
+      G.__pump(3);
+      if (E._error) fail('hub ENTER on the highlighted row errored: ' + E._error.message);
+      else if (!wantScene) fail('hub row 1 has no scene to open');
+      else if (E.current === hubPg) fail('ENTER did not open the highlighted station');
+      if (E._error) fail('menu keyboard errored: ' + E._error.message);
+      if (!failures) ok('input frame OK — a key press fires once on menu pages, not every frame');
 
       // ---- v1.8.1: Flywheel Orbit + Rivet Gun replace the old slots ----
       E._error = null;
