@@ -11,6 +11,7 @@ import { loadSave, ensureShape, saveSave } from './core/save.js';
 import { SupabaseClient } from './systems/supabase.js';
 import { AudioEngine } from './systems/audio.js';
 import { AUTH } from './systems/auth.js';
+import { installGlobalNavigation } from './core/navigation.js';
 
 import { GameplayScene } from './systems/gameplay.js';
 import { ShopScene } from './ui/shop.js';
@@ -57,11 +58,9 @@ async function boot() {
   engine.supabase = new SupabaseClient();
   engine._difficulty = 'normal';
   engine.auth = AUTH;
+  installGlobalNavigation(engine);
 
-  // Ensure guest or current user
-  if (!AUTH.getCurrentUser()) {
-    AUTH.guestLogin();
-  }
+  if (!AUTH.getCurrentUser()) AUTH.guestLogin();
 
   let save = ensureShape(loadSave());
   if (!save.playerId) {
@@ -71,8 +70,8 @@ async function boot() {
   engine.save = save;
 
   // Scenes — every page speaks the same UI language (ui/kit.js)
-  engine.addScene('menu', new HomeScene(engine));   // dashboard homescreen
-  engine.addScene('hub', new MenuScene(engine));    // "MORE" page with the rest
+  engine.addScene('menu', new HomeScene(engine));
+  engine.addScene('hub', new MenuScene(engine));
   engine.addScene('menuClassic', new MenuScene(engine));
   engine.addScene('worldmap', new WorldMapScene(engine));
   engine.addScene('worldMap', new WorldMapScene(engine));
@@ -92,15 +91,13 @@ async function boot() {
   engine.addScene('arsenal', new ArsenalScene(engine));
   engine.addScene('armoury', new ArmouryScene(engine));
   engine.addScene('relics', new RelicsScene(engine));
-  engine.addScene('shop', new ShopScene(engine));        // the Forge (permanent tracks + skins)
-  engine.addScene('coinShop', new CoinShopScene(engine)); // coin shop (fixed-price goods)
+  engine.addScene('shop', new ShopScene(engine));
+  engine.addScene('coinShop', new CoinShopScene(engine));
   engine.addScene('profile', new ProfileScene(engine));
   engine.addScene('identity', new IdentityScene(engine));
   engine.addScene('tutorial', new TutorialScene(engine));
 
   if (typeof globalThis !== 'undefined') globalThis.__ENGINE__ = engine;
-  // v1.7: settle LAST month's season once (rank-locked avatar/frame + printed payouts).
-  // Non-blocking; offline or already-settled -> nothing happens.
   try {
     settleSeason(save, save.playerId, (period) => (engine.supabase && engine.supabase.topMonthly)
       ? engine.supabase.topMonthly(period, 100) : Promise.resolve([]))
@@ -109,7 +106,6 @@ async function boot() {
       })
       .catch(() => {});
   } catch {}
-  // v1.8: first-time conductors get the handbook before the depot
   if (!save.tutorialDone) engine.setScene('tutorial', { save });
   else engine.setScene('menu');
   engine.start();
