@@ -232,6 +232,16 @@ G.__consoleErrors = [];
 const _ce = console.error;
 console.error = (...a) => { G.__consoleErrors.push(a.map(String).join(' ')); };
 
+// v1.9: fake CrazyGames SDK — boot must auto sign-in with the platform
+// username (password derived from the CG session id, never typed).
+G.CrazyGames = {
+  SDK: {
+    init: async () => {},
+    user: { getUser: async () => ({ id: 'cg-sky-42', username: 'SkyConductor' }) },
+    game: { gameplayStart() {}, gameplayStop() {} },
+  },
+};
+
 try {
   await importModule('js/main.js');
   // wait for async boot (art forge + icon plates) to finish
@@ -744,6 +754,200 @@ try {
       if (E._error) fail('pause build view errored: ' + E._error.message);
       ok('ten fixes part 2 OK — music, records, boons, pause build view');
 
+      // ---- v1.9.2 regression: the mocked / glitchy UI paths really work ----
+      // These drive REAL clicks (including the delegated 'click' event the
+      // shared navigation listens for) — method calls cannot catch any of it.
+      E._error = null;
+      const realmsM = await importModule('js/data/realms.js');
+      const soundM = await importModule('js/core/sound.js');
+      const fullClick = (r) => {
+        const x = r.x + r.w / 2, y = r.y + r.h / 2;
+        cv.dispatch('mousemove', { clientX: x, clientY: y, button: 0 });
+        cv.dispatch('mousedown', { clientX: x, clientY: y, button: 0 });
+        cv.dispatch('mouseup', { clientX: x, clientY: y, button: 0 });
+        try { G.dispatchEvent({ type: 'mouseup', button: 0 }); } catch {}   // Input listens on window
+        cv.dispatch('click', { clientX: x, clientY: y, button: 0, preventDefault() {}, stopPropagation() {} });
+        G.__pump(4);
+      };
+
+      // (1) a bad scene key must keep the current scene (it used to blank it)
+      E.setScene('hub', { save: E.save });
+      G.__pump(2);
+      const keepS = E.current, keepName = E.currentName;
+      E.setScene('__nope__');
+      if (E.current !== keepS || !E.current) fail('bad scene name replaced/blanked the current scene');
+      if (E.currentName !== keepName) fail('bad scene name corrupted engine.currentName');
+
+      // (2) nav BACK chip reaches home, and the opening click must not
+      //     phantom-fire on home afterwards (stale justDown bug)
+      E.setScene('profile', { save: E.save });
+      G.__pump(20);
+      fullClick({ x: 6, y: 7, w: 52, h: 24 });            // shared TOP.back
+      if (E.current?.constructor?.name !== 'HomeScene') fail('nav BACK chip did not reach home (got ' + (E.current?.constructor?.name || 'blank') + ')');
+      G.__pump(30);
+      if (E.current?.constructor?.name !== 'HomeScene') fail('a stale click phantom-fired after landing on home');
+
+      // (3) home draws its own top bar — nav must not steal its buttons
+      E.setScene('menu', { save: E.save });
+      G.__pump(20);
+      fullClick({ x: 224, y: 5, w: 42, h: 26 });           // deck grid button (sits under the shards chip)
+      if (E.current?.constructor?.name !== 'HomeScene') fail('global nav hijacked the home grid button');
+      if (!E.current?._gridOpen) fail('home grid button did not open the deck');
+      E.setScene('menu', { save: E.save });
+      G.__pump(20);
+      fullClick({ x: 4, y: 4, w: 96, h: 28 });             // profile button (sits under the BACK chip)
+      if (E.current?.constructor?.name !== 'ProfileScene') fail('home profile button did not open the profile (got ' + (E.current?.constructor?.name || 'blank') + ')');
+
+      // (4) purse chip passes a REAL from key, Escape returns to it
+      G.__pump(20);
+      fullClick({ x: 154, y: 7, w: 52, h: 24 });           // TOP.coins
+      if (E.current?.constructor?.name !== 'CoinShopScene') fail('purse chip did not open the coin shop');
+      else if (E.current.from !== 'profile') fail('nav purse chip passed a non-scene from key: ' + E.current.from);
+      G.__press('Escape');
+      G.__pump(6);
+      if (E.current?.constructor?.name !== 'ProfileScene') fail('Escape from the coin shop did not return to profile (got ' + (E.current?.constructor?.name || 'blank') + ')');
+      if (!failures) ok('nav chrome OK — bad keys no-op, BACK goes home, no phantom taps, real from keys');
+
+      // (5) pause gets the RAW ctx the game really sends; buttons must be
+      //     clickable; settings round-trips back into the live run
+      E._error = null;
+      E.setScene('gameplay', { save: E.save, realmId: 'purgatory', stage: 1 });
+      G.__pump(6);
+      const gpP = E.current;
+      E.setScene('pause', { from: 'gameplay', ctx: gpP });  // raw scene — the real call shape
+      G.__pump(20);
+      const pzR2 = E.current;
+      if (E._error) fail('pause with raw ctx errored: ' + E._error.message);
+      if (pzR2._gp() !== gpP) fail('pause _gp() did not resolve the raw gameplay scene');
+      if (!pzR2._scoreLines().length) fail('pause score view is empty with the raw ctx');
+      if (!pzR2._buildLines().length) fail('pause build view is empty with the raw ctx');
+      fullClick({ x: 49, y: 178, w: 172, h: 30 });         // RESUME THE RUN (buttons used to be NaN rects)
+      if (E.current !== gpP) fail('RESUME button click did not return to the run');
+      if (E.currentName !== 'gameplay') fail('resuming did not restore engine.currentName');
+      E.setScene('pause', { from: 'gameplay', ctx: gpP });
+      G.__pump(20);
+      fullClick({ x: 49, y: 280, w: 172, h: 30 });         // SETTINGS
+      if (E.current?.constructor?.name !== 'SettingsScene') fail('pause SETTINGS button did not open settings');
+      G.__pump(20);
+      const soundWas = E.save.settings.sound;
+      fullClick({ x: 8, y: 62, w: 254, h: 34 });            // SOUND row
+      if (E.save.settings.sound === soundWas) fail('settings SOUND toggle did not flip');
+      if (soundM.SOUNDS.enabled !== !!E.save.settings.sound) fail('SOUND toggle did not sync SOUNDS.enabled');
+      E.save.settings.sound = soundWas; soundM.SOUNDS.enabled = !!soundWas;
+      fullClick({ x: 8, y: 142, w: 254, h: 34 });           // SCREEN SHAKE row
+      if (E.save.settings.shake !== 0) fail('settings SCREEN SHAKE toggle did not flip');
+      if (gpP.camera.shakeEnabled !== false) fail('shake toggle did not reach the live gameplay camera');
+      fullClick({ x: 8, y: 142, w: 254, h: 34 });           // flip shake back on
+      if (gpP.camera.shakeEnabled !== true) fail('shake toggle did not re-enable the live gameplay camera');
+      fullClick({ x: 154, y: 7, w: 52, h: 24 });            // purse chip from settings
+      if (E.current?.constructor?.name !== 'CoinShopScene') fail('settings purse chip did not open the coin shop');
+      G.__press('Escape');
+      G.__pump(6);
+      if (E.current?.constructor?.name !== 'SettingsScene') fail('coin shop did not return to settings (got ' + (E.current?.constructor?.name || 'blank') + ')');
+      G.__press('Escape');
+      G.__pump(6);
+      if (E.current?.constructor?.name !== 'PauseScene') fail('settings did not return to the pause layer (got ' + (E.current?.constructor?.name || 'blank') + ')');
+      if (E.current._gp() !== gpP) fail('settings round trip lost the run context');
+      G.__pump(20);
+      fullClick({ x: 49, y: 178, w: 172, h: 30 });         // RESUME again
+      if (E.current !== gpP) fail('RESUME after the settings round trip failed');
+      if (E._error) fail('pause/settings round trip errored: ' + E._error.message);
+      if (!failures) ok('pause + settings OK — raw ctx, clickable buttons, live toggles, coin-shop round trip');
+
+      // (6) hit-test sweep: forge BOONS tab, world-map bottom row, profile
+      //     identity grid (wrapped cells), leaderboard season strip
+      E._error = null;
+      E.setScene('shop', { save: E.save });
+      G.__pump(20);
+      clickAt({ x: 200, y: 50, w: 60, h: 24 });             // 4th tab (BOONS) — was i<3, unreachable
+      if (E.current.tab !== 3) fail('shop BOONS tab did not switch (tab=' + E.current.tab + ')');
+      if (!E.current.items().some((i) => i.kind === 'boon')) fail('shop tab 3 does not show the boons');
+      G.__press('Escape');
+      G.__pump(6);
+      if (E.current?.constructor?.name !== 'HomeScene') fail('Escape from the forge did not reach home (got ' + (E.current?.constructor?.name || 'blank') + ')');
+
+      E.setScene('worldmap', { save: E.save });
+      G.__pump(20);
+      E.current.dismissHint && E.current.dismissHint();   // onboarding hint owns clicks until dismissed
+      G.__pump(2);
+      if (realmsM.DIFFICULTIES.length < 6) fail('expected 6 difficulties for the row-wrap click test');
+      clickAt({ x: 8, y: 66, w: 62, h: 24 });               // row 2, tile 1 (gated out before)
+      if (E.current.diffTab !== 4) fail('world map bottom difficulty row did not answer (diffTab=' + E.current.diffTab + ', want 4)');
+
+      E.setScene('profile', { save: E.save });
+      G.__pump(20);
+      clickAt({ x: 180, y: 40, w: 82, h: 24 });             // IDENTITY tab (3rd, was off-canvas)
+      if (E.current.tab !== 2) fail('profile IDENTITY tab did not switch (tab=' + E.current.tab + ')');
+      const avaIds = Object.keys(seasonMod.AVATARS);
+      const frameIds = Object.keys(seasonMod.FRAMES);
+      E.save.ownedAvatars = avaIds.slice();
+      E.save.ownedFrames = frameIds.slice();
+      E.save.avatar = null;
+      clickAt({ x: 8, y: 198, w: 60, h: 60 });              // avatar #5 — wrapped row, off-canvas before
+      if (E.save.avatar !== avaIds[4]) fail('wrapped avatar cell did not wear ' + avaIds[4] + ' (got ' + E.save.avatar + ')');
+      E.save.frame = null;
+      clickAt({ x: 72, y: 280, w: 60, h: 34 });             // frame #1 cell — reachable now
+      if (E.save.frame !== frameIds[0]) fail('frame cell click did not wear ' + frameIds[0] + ' (got ' + E.save.frame + ')');
+
+      E.setScene('leaderboards', { save: E.save });
+      G.__pump(20);
+      E.current.dismissHint && E.current.dismissHint();   // scores-saved hint owns clicks until dismissed
+      G.__pump(2);
+      clickAt({ x: 8, y: 148, w: 254, h: 20 });             // season strip is drawn at y148
+      if (!E.current.seasonOpen) fail('season rewards strip did not open');
+      if (E._error) fail('hit-test sweep errored: ' + E._error.message);
+      if (!failures) ok('hit-test sweep OK — forge BOONS, world-map row 2, identity grid, season strip');
+
+      // (7) settings.shake gates the camera AND the fx.shakeScreen bridge
+      //     (shakeScreen used to drive nothing; shake was never read)
+      E.save.settings.shake = 0;
+      E.setScene('gameplay', { save: E.save, realmId: 'purgatory', stage: 1 });
+      G.__pump(4);
+      const gpSk = E.current;
+      if (gpSk.camera.shakeEnabled !== false) fail('shake=0 was not applied to the camera at run enter');
+      gpSk.camera.shake(1);
+      if (gpSk.camera.trauma !== 0) fail('camera shook while SCREEN SHAKE was off');
+      gpSk.fx.shakeScreen(8, 0.3);
+      if (gpSk.camera.trauma !== 0) fail('shakeScreen ignored the SCREEN SHAKE setting');
+      gpSk.camera.shakeEnabled = true; gpSk.fx.shakeEnabled = true;
+      gpSk.fx.shakeScreen(8, 0.3);
+      if (gpSk.camera.trauma <= 0) fail('shakeScreen no longer drives the camera trauma');
+      gpSk.camera.trauma = 0;
+      E.save.settings.shake = 1;
+      if (E._error) fail('shake gate errored: ' + E._error.message);
+      if (!failures) ok('shake gate OK — settings.shake gates camera + fx bridge');
+
+      // (8) on-screen controls: visible geometry that answers real clicks,
+      //     placed clear of the train-status panel and the minimap
+      E.save.settings.shake = 1;
+      E.setScene('gameplay', { save: E.save, realmId: 'purgatory', stage: 1 });
+      G.__pump(6);
+      const gpC = E.current;
+      const ctl = gpC._ctl ? gpC._ctl() : null;
+      if (!ctl || !ctl.pause || !ctl.dash || !ctl.fire) fail('_ctl() missing button geometry');
+      else {
+        const HW = 270, HH = 480;
+        const hitBox = (A, B) => !(A.x + A.w <= B.x || B.x + B.w <= A.x || A.y + A.h <= B.y || B.y + B.h <= A.y);
+        const panelBox = { x: HW - 64 - 90 - 6 - 2, y: HH - 86 - 2, w: 94, h: 40 };  // train status
+        const miniBox = { x: HW - 64, y: HH - 64, w: 60, h: 60 };                     // minimap frame
+        if (hitBox(panelBox, miniBox)) fail('train status panel still overlaps the minimap');
+        for (const k of ['dash', 'fire']) {
+          const b = ctl[k];
+          const r = { x: b.x - b.r, y: b.y - b.r, w: b.r * 2, h: b.r * 2 };
+          if (hitBox(r, panelBox)) fail(k + ' control overlaps the train status panel');
+          if (hitBox(r, miniBox)) fail(k + ' control overlaps the minimap');
+        }
+        // the pause pill must work with a plain mouse click — no key press,
+        // and no touch finger (the old gate required touchSeen)
+        fullClick({ x: ctl.pause.x - ctl.pause.r, y: ctl.pause.y - ctl.pause.r, w: ctl.pause.r * 2, h: ctl.pause.r * 2 });
+        if (E.current?.constructor?.name !== 'PauseScene') fail('on-screen pause pill did not open the pause layer');
+        G.__pump(20);
+        fullClick({ x: 49, y: 178, w: 172, h: 30 });   // RESUME THE RUN
+        if (E.current !== gpC) fail('RESUME after the on-screen pause pill failed');
+      }
+      if (E._error) fail('HUD controls errored: ' + E._error.message);
+      if (!failures) ok('HUD controls OK — visible pause/SPC/Q-E rings, no panel collisions');
+
       // ---- defeat path on a fresh run ----
       E._error = null;
       E.setScene('gameplay', { save: E.save, realmId: 'frozen', stage: 3 });
@@ -756,6 +960,164 @@ try {
       G.__pump(200);
       if (E._error) fail('defeat path errored: ' + E._error.message);
       ok('defeat path resolves to summary without errors');
+
+      // ==== v1.9: levels + unlocks + saved leaderboards + CG + hints ====
+      E._error = null;
+
+      // (a) CrazyGames auto sign-in — username from the platform, password
+      //     derived from the CG session (auth.crazyLogin)
+      const authM9 = await importModule('js/systems/auth.js');
+      const cgM9 = await importModule('js/systems/crazygames.js');
+      const lvM9 = await importModule('js/systems/levels.js');
+      const curU9 = authM9.AUTH.getCurrentUser();
+      if (!curU9 || !curU9.crazy || curU9.username !== 'SkyConductor') {
+        fail('boot did not auto sign-in via CrazyGames (got ' + (curU9 ? curU9.username + ' crazy=' + curU9.crazy : 'null') + ')');
+      } else if (!authM9.AUTH.isCrazy()) fail('AUTH.isCrazy() false for the CG account');
+      else if (!curU9.passHash) fail('CG account has no derived password hash');
+      else if (!cgM9.CrazyGames.available()) fail('CrazyGames.available() false with the SDK present');
+      else {
+        const cgU9 = await cgM9.CrazyGames.user();
+        if (!cgU9 || cgU9.username !== 'SkyConductor') fail('CrazyGames.user() did not return the platform profile');
+        else ok('CrazyGames auto sign-in OK — username from CG, password derived from the session');
+      }
+      // the CG account is REUSED on later visits (same id → same user)
+      const again9 = authM9.AUTH.crazyLogin({ id: 'cg-sky-42', username: 'SkyConductor' });
+      if (!again9.ok || again9.user.username !== 'SkyConductor') fail('repeat CrazyGames sign-in did not reuse the account');
+
+      // (b) XP → level-up pays coins+shards and arms the home banner
+      E.save.playerLevel = 1; E.save.playerXp = 0; E.save.levelUpNotice = null;
+      const coins9 = E.save.coins, shards9 = E.save.shards;
+      const need9 = lvM9.xpToNext(1);
+      const gain9 = lvM9.addPlayerXp(E.save, need9);
+      if (E.save.playerLevel !== 2 || gain9.levels.length !== 1) fail('XP did not level the conductor (lv=' + E.save.playerLevel + ')');
+      else if (E.save.coins - coins9 !== 50 + 25 * 2 || E.save.shards - shards9 !== 5 + 2 * 2) fail('level-up reward payout wrong (+' + (E.save.coins - coins9) + '© +' + (E.save.shards - shards9) + '◆)');
+      else if (!E.save.levelUpNotice || !(E.save.levelUpNotice.levels || []).includes(2)) fail('levelUpNotice not armed for the home banner');
+      else if (!(lvM9.xpToNext(5) > lvM9.xpToNext(1))) fail('XP curve is not rising');
+      else ok('conductor levels OK — XP pays coins+shards on level-up and arms the home banner');
+
+      // (c) content gates: armour, daily run, weapon pool
+      const wepM9 = await importModule('js/data/weapons.js');
+      E.save.playerLevel = 1;
+      const open1_9 = lvM9.unlockedWeapons(E.save, wepM9.WEAPONS);
+      if (!open1_9.length || open1_9.some(w => lvM9.weaponReqLevel(w) > 1)) fail('level-1 weapon pool wrong (n=' + open1_9.length + ')');
+      E.save.playerLevel = 9;
+      if (lvM9.unlockedWeapons(E.save, wepM9.WEAPONS).length !== wepM9.WEAPONS.length) fail('level 9 should open every weapon');
+      // armoury refuses a level-locked set even when it is owned
+      E.save.playerLevel = 1;
+      if (!(E.save.armour || []).includes('phantom')) E.save.armour.push('phantom');
+      E.save.activeArmour = 'guardian';
+      E.save.hints = {};
+      E.setScene('armoury', { save: E.save });
+      G.__pump(20);
+      E.current.dismissHint && E.current.dismissHint();
+      G.__pump(2);
+      const phIdx9 = realmsM.ARMOURS.findIndex(a => a.id === 'phantom');
+      const phRect9 = E.current.list.rowRect(phIdx9);
+      fullClick(phRect9);
+      if (E.save.activeArmour !== 'guardian') fail('armoury let a LEVEL-3 set equip at level 1');
+      E.save.playerLevel = 9;
+      fullClick(phRect9);
+      if (E.save.activeArmour !== 'phantom') fail('armoury refused the set even at level 9');
+      // daily run refuses at level 1, opens once levelled
+      E.save.playerLevel = 1;
+      E.setScene('dailyRun', { save: E.save });
+      G.__pump(20);
+      fullClick({ x: 100, y: 210, w: 160, h: 34 });
+      G.__pump(6);
+      if (E.current?.constructor?.name === 'GameplayScene') fail('daily run started while still LEVEL 1');
+      E.save.playerLevel = 5;
+      fullClick({ x: 100, y: 210, w: 160, h: 34 });
+      G.__pump(6);
+      if (E.current?.constructor?.name !== 'GameplayScene') fail('daily run did not start after reaching level 5');
+      G.__pump(10);
+      if (E._error) fail('content gates errored: ' + E._error.message);
+      else ok('content gates OK — armour, dailies and the weapon pool lock behind levels');
+
+      // (d) leaderboards SAVE: local board rows + offline POST ranks
+      const saveM9 = await importModule('js/core/save.js');
+      E.save.localBoards = {};
+      // file the run under the board the scene will actually open
+      // (realm from save.lastRealm, difficulty from engine._difficulty)
+      const scenRealm9 = E.save.lastRealm || 'purgatory';
+      const scenDiff9 = E._difficulty || 'normal';
+      saveM9.recordLocalScore(E.save, { score: 12345, stage: 4, realm: scenRealm9, difficulty: scenDiff9, kills: 77, at: Date.now(), name: 'SkyConductor' });
+      const rows9 = saveM9.localBoardRows(E.save, scenRealm9, scenDiff9);
+      if (!rows9.length || rows9[0].score !== 12345 || rows9[0].name !== 'SkyConductor') fail('recordLocalScore did not file the run on the local board');
+      E.save.hints = {};
+      E.setScene('leaderboards', { save: E.save });
+      G.__pump(20);
+      E.current.dismissHint && E.current.dismissHint();
+      G.__pump(2);
+      if (E.current.boardState !== 'offline') fail('expected an offline board (got ' + E.current.boardState + ')');
+      else if (!E.current.rows.length || E.current.rows[0].score !== 12345) fail('leaderboard did not fall back to the saved local rows');
+      // POST with no network → saved on this device, ranked locally
+      E.setScene('runSummary', { save: E.save, realmId: scenRealm9, stage: 4, victory: false,
+        runStats: { kills: 77, coins: 30, bestCombo: 3, damageTaken: 2 }, time: 61, sectorDuration: 60,
+        coins: 30, level: 3, owned: {}, score: 12345, difficulty: scenDiff9, trainHurt: false, damageTaken: 2, cause: 'TEST' });
+      G.__pump(6);
+      E.current._doPost();
+      G.__pump(2);
+      if (E.current.post?.state !== 'local' || E.current.post?.rank !== 1) {
+        fail('offline POST did not rank locally (state=' + (E.current.post && E.current.post.state) + ' rank=' + (E.current.post && E.current.post.rank) + ')');
+      } else if (!(E.save.myBoards || {})[scenRealm9 + '|' + scenDiff9 + '|' + (await importModule('js/data/season.js')).monthKey()]) {
+        fail('local POST did not write myBoards');
+      }
+      if (E._error) fail('saved-leaderboard block errored: ' + E._error.message);
+      else ok('leaderboards save OK — local rows show offline and POST ranks them on-device');
+
+      // (e) interactive hints: open, Escape closes WITHOUT leaving, action runs
+      E.save.hints = {};
+      E.setScene('armoury', { save: E.save });
+      G.__pump(20);
+      if (!E.current.hintOpen?.()) fail('armoury onboarding hint did not open');
+      else {
+        G.__press('Escape');
+        G.__pump(4);
+        if (E.current?.constructor?.name !== 'ArmouryScene') fail('Escape while a hint was open left the page');
+        else if (E.current.hintOpen()) fail('Escape did not dismiss the hint');
+      }
+      E.save.hints = {};
+      E.save.activeArmour = null;
+      E.setScene('armoury', { save: E.save });
+      G.__pump(20);
+      fullClick({ x: 19, y: 300, w: 110, h: 30 });       // hint primary action (EQUIP STARTER)
+      G.__pump(6);
+      if (E.current.hintOpen()) fail('hint stayed open after its action button');
+      else if (E.save.activeArmour !== 'guardian') fail('hint action button did not run its function');
+
+      // (f) BACK chip reaches home from every chrome page
+      const backPages9 = ['hub', 'menuClassic', 'worldmap', 'trainbase', 'achievements', 'leaderboards',
+        'dailyRun', 'weeklyChallenge', 'settings', 'arsenal', 'armoury', 'relics', 'shop', 'coinShop',
+        'profile', 'identity', 'daily'];
+      for (const nm9 of backPages9) {
+        E.setScene(nm9, { save: E.save });
+        G.__pump(20);
+        if (E.current?.hintOpen?.()) { E.current.dismissHint(); G.__pump(2); }
+        fullClick({ x: 6, y: 7, w: 52, h: 24 });           // shared TOP.back
+        G.__pump(8);
+        if (E.current?.constructor?.name !== 'HomeScene') fail('BACK chip on ' + nm9 + ' went to ' + (E.current?.constructor?.name || 'blank'));
+        if (E._error) { fail('BACK chip on ' + nm9 + ' errored: ' + E._error.message); break; }
+      }
+
+      // (g) tutorial listens for the keys it just taught
+      E.setScene('tutorial', { save: E.save });
+      G.__pump(20);
+      E.current.step = 1; G.__pump(2);
+      G.__press('ArrowRight');
+      G.__pump(4);
+      if (E.current.step !== 2) fail('tutorial movement page did not advance on an arrow key (step=' + E.current.step + ')');
+      E.current.step = 5; G.__pump(2);
+      G.__press('KeyQ');
+      G.__pump(4);
+      if (E.current.step !== 6) fail('tutorial ultimate page did not advance on Q (step=' + E.current.step + ')');
+      G.__press('Space');
+      G.__pump(4);
+      if (E.current.step !== 7) fail('tutorial Space advance broke (step=' + E.current.step + ')');
+      G.__press('Escape');
+      G.__pump(6);
+
+      if (E._error) fail('v1.9 block errored: ' + E._error.message);
+      else ok('v1.9 UX OK — interactive hints, tutorial keys, BACK chip on every page');
     }
   }
 } catch (e) {

@@ -10,21 +10,22 @@ import { spendShards, saveSave } from '../core/save.js';
 
 // BOONS — one-time permanent perks, priced in shards, zero mystery
 export const FORGE_BOONS = [
-  { id: 'starterKit', name: "Conductor's Kit", cost: 120, icon: 'gift',
+  { id: 'starterKit', name: "Conductor's Kit", cost: 120, icon: 'gift', reqLevel: 3,
     desc: 'Every run starts with +1 reroll and +1 banish.' },
-  { id: 'furnaceStart', name: 'Banked Coals', cost: 100, icon: 'fire',
+  { id: 'furnaceStart', name: 'Banked Coals', cost: 100, icon: 'fire', reqLevel: 3,
     desc: 'Every run starts with the furnace half stoked.' },
-  { id: 'extraBanish', name: 'Blacklist Ritual', cost: 150, icon: 'cross',
+  { id: 'extraBanish', name: 'Blacklist Ritual', cost: 150, icon: 'cross', reqLevel: 5,
     desc: 'One extra banish on every run, forever.' },
 ];
 import { SOUNDS } from '../core/sound.js';
 import {
-  KW, KH, K, tile, label, glyph, topBar, itemCard, drawTabs, List, drawToast,
+  KW, KH, K, tile, label, glyph, topBar, itemCard, drawTabs, tabRects, List, drawToast,
 } from './kit.js';
 
 export class ShopScene {
   constructor(engine) {
     this.engine = engine; this.t = 0; this.pageT = 0; this.tab = 0; this.toast = null;
+    this.chromeTopBar = true;   // draws the kit topBar — global nav wires its chips
     this.embers = [];
     for (let i = 0; i < 24; i++) this.embers.push({ x: Math.random() * KW, y: Math.random() * KH, s: 0.4 + Math.random() });
     this._mouse = { x: KW / 2, y: KH / 2, down: false, justDown: false };
@@ -67,9 +68,17 @@ export class ShopScene {
     if (item.kind === 'boon') return (this.save.permaBoons || {})[item.boon.id] ? null : item.boon.cost;
     return this._owned(item) ? null : item.skin.cost;
   }
+  _reqLevel(item) {
+    if (!item) return 1;
+    if (item.kind === 'track') return item.track.reqLevel || 1;
+    if (item.kind === 'boon') return item.boon.reqLevel || 1;
+    return item.skin.reqLevel || 1;
+  }
   _buy(item) {
     if (!item) return;
     const save = this.save;
+    const req = this._reqLevel(item);
+    if ((save.playerLevel || 1) < req) return this.say('UNLOCKS AT CONDUCTOR LEVEL ' + req, K.BAD);
     if (item.kind === 'boon') {
       const b = item.boon;
       save.permaBoons = save.permaBoons || {};
@@ -107,6 +116,12 @@ export class ShopScene {
   }
   _say(msg, color) { this.say(msg, color); }
   say(msg, color = K.GOLD) { this.toast = { msg, color, t: 1.8 }; }
+  // Shared nav back chip and Escape both leave through here; `_return` lets
+  // scenes like Settings/Profile keep their state when we bounce back to them.
+  _goBack() {
+    saveSave(this.save);
+    this.engine.setScene(this.from || 'menu', { save: this.save, _return: true });
+  }
   hit(r) { const m = this._mouse; return m.x >= r.x && m.x <= r.x + r.w && m.y >= r.y && m.y <= r.y + r.h; }
   update(dt) {
     this.t += dt; this.pageT += dt;
@@ -115,7 +130,7 @@ export class ShopScene {
     const inp = this.engine.input;
     const items = this.items();
     this.list.max = items.length;
-    if (inp?.wasPressed?.('Escape')) { saveSave(this.save); this.engine.setScene(this.from, { save: this.save }); return; }
+    if (inp?.wasPressed?.('Escape')) { this._goBack(); return; }
     if (inp?.wasPressed?.('ArrowLeft')) { this.tab = (this.tab + 3) % 4; this.list.keyIndex = 0; this.list.scroll = 0; }
     if (inp?.wasPressed?.('ArrowRight')) { this.tab = (this.tab + 1) % 4; this.list.keyIndex = 0; this.list.scroll = 0; }
     let act = -1;
@@ -128,7 +143,10 @@ export class ShopScene {
     for (let i = a; i <= b; i++) if (this.hit(this.list.rowRect(i))) this.list.hoverIndex = i;
     if (!this._grace) {
       if (this._mouse.justDown) {
-        for (let i = 0; i < 3; i++) { const r = { x: 8 + i * 86, y: 40, w: 80, h: 24 }; if (this.hit(r)) { this.tab = i; this.list.keyIndex = 0; this.list.scroll = 0; this._mouse.justDown = false; return; } }
+        // Tab hits come from the same tabRects() drawTabs paints (4 tabs,
+        // y=50). The old i<3 loop used x=8+i*86 y=40 — BOONS was unreachable.
+        const trs = tabRects(4, 50);
+        for (let i = 0; i < trs.length; i++) { if (this.hit(trs[i])) { this.tab = i; this.list.keyIndex = 0; this.list.scroll = 0; this._mouse.justDown = false; return; } }
         for (let i = a; i <= b; i++) if (this.hit(this.list.rowRect(i))) { this._buy(items[i]); this._mouse.justDown = false; return; }
       }
       if (inp?.wasPressed?.('Enter') && (act >= 0 ? act : this.list.keyIndex) >= 0) this._buy(items[act >= 0 ? act : this.list.keyIndex]);
@@ -162,11 +180,15 @@ export class ShopScene {
         const price = this._price(item);
         const isTrain = this.tab === 1;
         const color = isTrain ? '#8ef0ff' : '#ff8a30';
+        const req = this._reqLevel(item);
+        const lvlLocked = (this.save.playerLevel || 1) < req;
         itemCard(ctx, {
-          ...r, icon: isTrain ? 'train' : 'heart', iconColor: color,
+          ...r, icon: isTrain ? 'train' : 'heart', iconColor: lvlLocked ? '#5a5a68' : color,
           name: item.track.name, desc: item.track.desc,
-          right: price === null ? 'MAX RANK' : undefined,
-          cost: price === null ? undefined : price,
+          locked: lvlLocked,
+          right: lvlLocked ? ('LV ' + req) : (price === null ? 'MAX RANK' : undefined),
+          rightColor: lvlLocked ? K.BAD : undefined,
+          cost: (price === null || lvlLocked) ? undefined : price,
           costOk: price !== null && (this.save.shards || 0) >= price,
           hover: this.list.hoverIndex === i, selected: this.list.keyIndex === i, appear,
         });
@@ -177,22 +199,28 @@ export class ShopScene {
         }
       } else if (item.kind === 'boon') {
         const owned = !!((this.save.permaBoons || {})[item.boon.id]);
+        const req = this._reqLevel(item);
+        const lvlLocked = (this.save.playerLevel || 1) < req;
         itemCard(ctx, {
-          ...r, icon: item.boon.icon, iconColor: '#c07aff',
+          ...r, icon: item.boon.icon, iconColor: lvlLocked ? '#5a5a68' : '#c07aff',
           name: item.boon.name, desc: item.boon.desc,
-          owned,
-          cost: owned ? undefined : item.boon.cost,
+          owned, locked: lvlLocked,
+          right: lvlLocked ? ('LV ' + req) : undefined, rightColor: K.BAD,
+          cost: (owned || lvlLocked) ? undefined : item.boon.cost,
           costOk: (this.save.shards || 0) >= item.boon.cost,
           hover: this.list.hoverIndex === i, selected: this.list.keyIndex === i, appear,
         });
       } else {
         const owned = this._owned(item);
+        const req = this._reqLevel(item);
+        const lvlLocked = (this.save.playerLevel || 1) < req;
         itemCard(ctx, {
           ...r, icon: item.kind === 'charSkin' ? 'ghost' : 'train',
-          iconColor: item.skin.pal?.glow || K.GOLD,
+          iconColor: lvlLocked ? '#5a5a68' : (item.skin.pal?.glow || K.GOLD),
           name: item.skin.name, desc: item.skin.desc,
-          equipped: this._equipped(item), owned,
-          cost: owned ? undefined : item.skin.cost,
+          equipped: this._equipped(item), owned, locked: lvlLocked,
+          right: lvlLocked ? ('LV ' + req) : undefined, rightColor: K.BAD,
+          cost: (owned || lvlLocked) ? undefined : item.skin.cost,
           costOk: (this.save.shards || 0) >= (item.skin.cost || 0),
           hover: this.list.hoverIndex === i, selected: this.list.keyIndex === i, appear,
         });

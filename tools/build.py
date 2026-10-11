@@ -60,6 +60,10 @@ def main() -> None:
     new_payload = new_payload.replace("</", "<\\/")
     html = PAYLOAD_RE.sub(lambda m: m.group(1) + new_payload + m.group(3), html, count=1)
     HTML.write_text(html)
+    # Mirror into public/ for static hosts (Vercel serves public/).
+    pub = ROOT / "public"
+    pub.mkdir(exist_ok=True)
+    (pub / "index.html").write_text(html)
     total = sum(len(s) for s in sources.values())
     print(f"packed {len(sources)} modules ({total} chars) into index.html ({len(html)} bytes)")
 

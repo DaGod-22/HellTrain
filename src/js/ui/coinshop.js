@@ -8,7 +8,7 @@ import { COIN_SHOP } from '../data/progression.js';
 import { saveSave, spendCoins } from '../core/save.js';
 import { SOUNDS } from '../core/sound.js';
 import {
-  KW, KH, K, tile, label, glyph, topBar, itemCard, drawTabs, List, drawToast,
+  KW, KH, K, tile, label, glyph, topBar, itemCard, drawTabs, tabRects, List, drawToast,
 } from './kit.js';
 
 const CAT_META = {
@@ -27,6 +27,7 @@ const CAT_META = {
 export class CoinShopScene {
   constructor(engine) {
     this.engine = engine; this.t = 0; this.pageT = 0; this.tab = 0; this.toast = null;
+    this.chromeTopBar = true;   // draws the kit topBar — global nav wires its chips
     this.embers = [];
     for (let i = 0; i < 24; i++) this.embers.push({ x: Math.random() * KW, y: Math.random() * KH, s: 0.4 + Math.random() });
     this._mouse = { x: KW / 2, y: KH / 2, down: false, justDown: false };
@@ -47,6 +48,12 @@ export class CoinShopScene {
     this._mouse.wheel = 0;
   }
   exit() { saveSave(this.save); this.engine.resetResolution?.(); }
+  // Shared nav back chip and Escape both leave through here; `_return` lets
+  // scenes like Settings/Profile keep their state when we bounce back to them.
+  _goBack() {
+    saveSave(this.save);
+    this.engine.setScene(this.from || 'menu', { save: this.save, _return: true });
+  }
   hit(r) { const m = this._mouse; return m.x >= r.x && m.x <= r.x + r.w && m.y >= r.y && m.y <= r.y + r.h; }
   say(msg, color = K.GOLD) { this.toast = { msg, color, t: 1.8 }; }
 
@@ -78,7 +85,7 @@ export class CoinShopScene {
     if (this.toast) { this.toast.t -= dt; if (this.toast.t <= 0) this.toast = null; }
     this._grace = Math.max(0, (this._grace || 0) - dt);
     const inp = this.engine.input;
-    if (inp?.wasPressed?.('Escape')) { saveSave(this.save); this.engine.setScene(this.from, { save: this.save }); return; }
+    if (inp?.wasPressed?.('Escape')) { this._goBack(); return; }
     if (inp?.wasPressed?.('ArrowLeft')) { this.tab = (this.tab + 1) % 2; this.list.keyIndex = 0; this.list.scroll = 0; }
     if (inp?.wasPressed?.('ArrowRight')) { this.tab = (this.tab + 1) % 2; this.list.keyIndex = 0; this.list.scroll = 0; }
     this.list.max = this.items().length;
@@ -93,7 +100,10 @@ export class CoinShopScene {
     for (let i = a; i <= b; i++) if (this.hit(this.list.rowRect(i))) this.list.hoverIndex = i;
     if (!this._grace) {
       if (this._mouse.justDown) {
-        for (let i = 0; i < 2; i++) { const r = { x: 8 + i * 127, y: 50, w: 127, h: 24 }; if (this.hit(r)) { this.tab = i; this.list.keyIndex = 0; this.list.scroll = 0; this._mouse.justDown = false; return; } }
+        // Same tabRects() the tabs are painted with (2 tabs, y=50 — x=8/137).
+        // The old x=8+i*127 overlapped by 2px and re-derived the math.
+        const trs = tabRects(2, 50);
+        for (let i = 0; i < trs.length; i++) { if (this.hit(trs[i])) { this.tab = i; this.list.keyIndex = 0; this.list.scroll = 0; this._mouse.justDown = false; return; } }
         for (let i = a; i <= b; i++) if (this.hit(this.list.rowRect(i))) { this._buy(items[i]); this._mouse.justDown = false; return; }
       }
       if (inp?.wasPressed?.('Enter') && (act >= 0 ? act : this.list.keyIndex) >= 0) this._buy(items[act >= 0 ? act : this.list.keyIndex]);

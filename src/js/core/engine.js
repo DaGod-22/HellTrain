@@ -15,6 +15,7 @@ export class Engine {
     root.appendChild(this.canvas);
     this.scenes = {};
     this.current = null;
+    this.currentName = null;
     this.t = 0;
     this.last = performance.now();
     this.lastRenderTime = 0;
@@ -50,12 +51,26 @@ export class Engine {
   resetResolution() { this.setResolution(CFG.VIEW_W, CFG.VIEW_H); }
 
   addScene(name, scene) { this.scenes[name] = scene; }
-  resumeScene(scene) { if (scene) this.current = scene; }
+  resumeScene(scene) {
+    if (!scene) return;
+    this.current = scene;
+    // Keep the registered name in sync so navigation can pass a real scene
+    // key as `from` instead of a constructor name that never resolves.
+    const key = Object.keys(this.scenes).find((k) => this.scenes[k] === scene);
+    if (key) this.currentName = key;
+  }
   setScene(name, params = {}) {
     try {
+      const next = this.scenes[name];
+      if (!next) {
+        // Never clobber the current scene with undefined — a bad key used to
+        // blank the game (null-render crash) instead of being a no-op.
+        console.error('Scene not found', name);
+        return;
+      }
       if (this.current?.exit) this.current.exit();
-      this.current = this.scenes[name];
-      if(!this.current){ console.error('Scene not found', name); return; }
+      this.current = next;
+      this.currentName = name;
       this.current?.enter?.(params);
       this._error = null;
     } catch(e){

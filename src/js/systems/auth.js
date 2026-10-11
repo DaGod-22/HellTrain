@@ -25,6 +25,16 @@ function randomGuestName() {
   return adj[Math.floor(Math.random()*adj.length)] + noun[Math.floor(Math.random()*noun.length)] + Math.floor(Math.random()*9000+1000);
 }
 
+function uniqueName(users, base) {
+  let name = base;
+  for (let i = 2; i < 100; i++) {
+    const cand = base.slice(0, 14) + i;
+    if (!users[cand]) return cand;
+    name = cand;
+  }
+  return base.slice(0, 12) + Math.floor(Math.random() * 900 + 100);
+}
+
 function loadAuth() {
   try {
     const raw = localStorage.getItem(AUTH_KEY);
@@ -138,6 +148,51 @@ export class AuthSystem {
   logout() {
     this.current = null;
     setCurrentUsername(null);
+  }
+
+  // ---- CrazyGames: the platform IS the account --------------------------
+  // On CrazyGames you are signed in automatically: the username comes from
+  // the platform profile and the "password" is derived from the platform
+  // session id (hashPass('cg_' + id)) — never typed, never shown.
+  isCrazy(u) {
+    const cur = u || this.getCurrentUser();
+    return !!(cur && cur.crazy);
+  }
+  crazyLogin({ id, username } = {}) {
+    const cgId = String(id || '').trim();
+    if (!cgId) return { ok: false, error: 'CrazyGames session id missing' };
+    // reuse the account created for this CG id on any earlier visit
+    let user = Object.values(this.data.users).find(u => u.crazy && String(u.crazyId) === cgId);
+    if (!user) {
+      let name = String(username || '').trim().replace(/[^a-zA-Z0-9_]/g, '').slice(0, 16);
+      if (name.length < 3) name = 'Conductor' + Math.floor(Math.random() * 9000 + 1000);
+      if (this.data.users[name]) name = uniqueName(this.data.users, name);
+      const now = Date.now();
+      user = {
+        username: name,
+        passHash: hashPass('cg_' + cgId),   // password derived from the CG session
+        guest: false,
+        crazy: true,
+        crazyId: cgId,
+        created: now,
+        lastLogin: now,
+        avatar: 'conductor',
+        level: 1,
+        title: 'CrazyGames Conductor',
+        coins: 0,
+        gems: 0,
+        streak: 0,
+        lastDaily: 0,
+      };
+      this.data.users[user.username] = user;
+      this._save();
+    } else {
+      user.lastLogin = Date.now();
+      this._save();
+    }
+    this.current = user.username;
+    setCurrentUsername(user.username);
+    return { ok: true, user: JSON.parse(JSON.stringify(user)) };
   }
 
   getCurrentUser() {

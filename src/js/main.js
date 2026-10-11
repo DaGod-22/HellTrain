@@ -11,6 +11,8 @@ import { loadSave, ensureShape, saveSave } from './core/save.js';
 import { SupabaseClient } from './systems/supabase.js';
 import { AudioEngine } from './systems/audio.js';
 import { AUTH } from './systems/auth.js';
+import { CrazyGames } from './systems/crazygames.js';
+import { SOUNDS } from './core/sound.js';
 import { installGlobalNavigation } from './core/navigation.js';
 
 import { GameplayScene } from './systems/gameplay.js';
@@ -29,7 +31,9 @@ async function boot() {
   const root = document.getElementById('root');
   const loading = document.getElementById('loading');
   const setStatus = (msg) => {
-    try { const el = loading?.querySelector?.('.subtitle') || loading; if (el) el.textContent = msg; } catch {}
+    // Only ever write to the .subtitle line — the old `|| loading` fallback
+    // replaced the whole overlay (title included) with the status string.
+    try { const el = loading?.querySelector?.('.subtitle'); if (el) el.textContent = msg; } catch {}
   };
   const setProgress = (pct) => {
     try { const fill = loading?.querySelector?.('.bar-fill'); if (fill) { fill.style.animation = 'none'; fill.style.width = pct + '%'; } } catch {}
@@ -60,6 +64,21 @@ async function boot() {
   engine.auth = AUTH;
   installGlobalNavigation(engine);
 
+  // v1.9 — CrazyGames: the platform IS the account. On the CG site we
+  // auto sign-in BEFORE the save file is picked: username comes from the
+  // CG profile, the password is derived from the CG session (auth.js).
+  // Existing local (non-guest) accounts are never hijacked.
+  if (CrazyGames.available()) {
+    try {
+      await CrazyGames.init();
+      const cgUser = await CrazyGames.user();
+      const cur = AUTH.getCurrentUser();
+      if (cgUser && (!cur || cur.guest)) {
+        const res = AUTH.crazyLogin(cgUser);
+        if (res.ok) setStatus('SIGNED IN — ' + res.user.username.toUpperCase());
+      }
+    } catch {}
+  }
   if (!AUTH.getCurrentUser()) AUTH.guestLogin();
 
   let save = ensureShape(loadSave());
@@ -68,6 +87,11 @@ async function boot() {
     saveSave(save);
   }
   engine.save = save;
+
+  // Sync both sound engines with the saved settings (SOUNDS.enabled used to
+  // stay true even with sound off until the next settings toggle).
+  SOUNDS.enabled = save.settings?.sound !== 0;
+  engine.audio.enabled = save.settings?.sound !== 0;
 
   // Scenes — every page speaks the same UI language (ui/kit.js)
   engine.addScene('menu', new HomeScene(engine));
@@ -115,6 +139,17 @@ async function boot() {
 
   const resume = () => {
     engine.audio.resume();
+    // First user gesture — the AudioContext is allowed to run now, so the
+    // menu music (AudioEngine) can finally start. Runs use SOUNDS' THEME.
+    const startMenuMusic = () => {
+      try {
+        if (engine.save?.settings?.sound !== 0 && engine.currentName !== 'gameplay') engine.audio.startMusic('menu');
+      } catch {}
+    };
+    try {
+      if (engine.audio.ctx?.state === 'running') startMenuMusic();
+      else Promise.resolve(engine.audio.ctx?.resume?.()).then(startMenuMusic).catch(() => {});
+    } catch {}
     document.removeEventListener('click', resume);
     document.removeEventListener('keydown', resume);
   };

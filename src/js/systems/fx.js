@@ -197,7 +197,15 @@ export class FXSystem {
     this.flashes.push({ x, y, color, life, t: life, r });
   }
   screenTint(color, a) { this.screenFlash = { color, a: Math.max(this.screenFlash.a, a) }; }
-  shakeScreen(amount = 6, time = 0.25) { this.shake = Math.max(this.shake, amount); this.shakeT = Math.max(this.shakeT, time); }
+  shakeScreen(amount = 6, time = 0.25) {
+    if (this.shakeEnabled === false) return;   // save.settings.shake === 0
+    this.shake = Math.max(this.shake, amount);
+    this.shakeT = Math.max(this.shakeT, time);
+    // Bridge into the camera trauma: nothing consumed fx.shake directly, so
+    // every shakeScreen() call used to be a silent no-op. Paired call sites
+    // also call camera.shake() — trauma is capped at 1, so double-taps are fine.
+    if (this.camera) this.camera.shake(Math.min(0.45, amount / 16));
+  }
 
   damageText(x, y, text, color = '#ffffff', opts = {}) {
     if (!this.damageNumbers) return;

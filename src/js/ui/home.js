@@ -72,6 +72,7 @@ export class HomeScene {
     this.t = 0; this.pageT = 0;
     this.toast = null;
     this._grace = 0.15;
+    this._mouse.justDown = false;   // the opening click belongs to the last page
     this._gridOpen = false;
     this._thr = { v: 0, pulling: false };
     this._regenEnergy();
@@ -80,6 +81,12 @@ export class HomeScene {
     const last = this.save.lastRealm || unlocked[unlocked.length - 1];
     const i = REALMS.findIndex((r) => r.id === last);
     this.realmIndex = i >= 0 ? i : 0;
+    // Back at the depot — bring the menu loop back (boot skips this until the
+    // first user gesture lets the AudioContext run; startMusic is idempotent).
+    try {
+      const a = this.engine.audio;
+      if (a && this.save.settings?.sound !== 0 && a.ctx?.state === 'running') a.startMusic('menu');
+    } catch {}
   }
   exit() { saveSave(this.save); this.engine.resetResolution?.(); }
 
@@ -212,6 +219,7 @@ export class HomeScene {
       } else if (inRect(m, L.prev)) this._cycleRealm(-1);
       else if (inRect(m, L.next)) this._cycleRealm(1);
       else if (inRect(m, L.throttle)) this._pullThrottle();
+      else if (this.save.levelUpNotice && m.y >= 36 && m.y < 56) { this.save.levelUpNotice = null; saveSave(this.save); try { SOUNDS.levelup(); } catch {} }
       else if (this.save._seasonNotice && m.y >= 36 && m.y < 56) { this.save._seasonNotice = null; saveSave(this.save); }
       else if (inRect(m, L.coins) || inRect(m, L.shards)) go('coinShop');
       else if (inRect(m, L.profile)) go('profile');
@@ -251,6 +259,7 @@ export class HomeScene {
     // v1.6: energy is GONE — the schedule never runs out. Play all you like.
     this.save.lastRealm = this.realm.id;
     saveSave(this.save);
+    try { SOUNDS.depart(); } catch {}   // the throttle is pulled — the line answers
     this.engine.setScene('gameplay', {
       save: this.save, realmId: this.realm.id, stage: 1,
       difficulty: this.engine._difficulty || 'normal',
@@ -357,6 +366,13 @@ export class HomeScene {
 
   // ---- season notice (crimson ink) ----
   _notice(ctx) {
+    const lu = this.save.levelUpNotice;
+    if (lu && (lu.levels || []).length) {
+      label(ctx, 'LEVEL UP! CONDUCTOR LV ' + lu.levels[lu.levels.length - 1]
+        + ' \u2014 +' + (lu.coins || 0) + '\u00a9 +' + (lu.shards || 0) + '\u25c6', KW / 2, 43, '#ffe066', 6);
+      label(ctx, 'tap to dismiss \u00b7 new unlocks are waiting', KW / 2, 52, '#8a8494', 5);
+      return;
+    }
     const sn = this.save._seasonNotice;
     if (!sn) return;
     const parts = ['LAST SEASON: RANK #' + sn.rank + ' — +' + (sn.reward?.shards || 0) + '\u25c6 +' + (sn.reward?.coins || 0) + '\u00a9'];
@@ -400,7 +416,7 @@ export class HomeScene {
     } catch { label(ctx, (username[0] || '?').toUpperCase(), p.x + 14, p.y + 18, '#ffffff', 10); }
     ctx.restore();
     label(ctx, username.toUpperCase().slice(0, 8), p.x + 28, p.y + 12, K.TXT, 7, 'left');
-    const lvl = authUser?.level || Math.max(1, Math.floor((s.stats?.totalRuns || 0) / 3) + 1);
+    const lvl = s.playerLevel || 1;
     label(ctx, 'LVL ' + lvl + (isGuest ? ' \u00b7 GUEST' : ''), p.x + 28, p.y + 22, isGuest ? '#8a8494' : '#e8b054', 6, 'left');
 
     this._chip(ctx, L.coins, 'coin', fmtNum(s.coins || 0), '#ffd24a', this.hover === 'coins');

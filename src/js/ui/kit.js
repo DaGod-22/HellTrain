@@ -267,14 +267,23 @@ function drawRight(ctx, o, rx, y) {
 // ============================================================
 // TABS
 // ============================================================
-export function drawTabs(ctx, tabs, activeIdx, y = 40, hoverIdx = -1) {
-  const n = tabs.length;
+// Single source of truth for tab geometry — drawTabs paints these
+// rects and scenes hit-test the very same ones. The old code let
+// each scene re-derive the math, which is how tabs drifted apart
+// (drawn one place, clicked another, controls going dead).
+export function tabRects(n, y = 40) {
   const gap = 4;
   const w = Math.floor((KW - 16 - gap * (n - 1)) / n);
-  const rects = [];
+  const out = [];
+  for (let i = 0; i < n; i++) out.push({ x: 8 + i * (w + gap), y, w, h: 24 });
+  return out;
+}
+
+export function drawTabs(ctx, tabs, activeIdx, y = 40, hoverIdx = -1) {
+  const rects = tabRects(tabs.length, y);
   tabs.forEach((t, i) => {
-    const x = 8 + i * (w + gap);
-    rects.push({ x, y, w, h: 24, id: t.id ?? i });
+    const { x, w } = rects[i];
+    rects[i].id = t.id ?? i;
     const active = i === activeIdx;
     const hov = i === hoverIdx;
     tile(ctx, x, y, w, 24, 8, {

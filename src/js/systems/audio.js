@@ -53,6 +53,7 @@ export class AudioEngine {
 
   // ====== Generic tone ======
   tone(freq, dur, type = 'square', gain = 0.2, attack = 0.005, release = 0.1, slideTo = null) {
+    if (this.enabled === false) return;
     this.ensure(); if (!this.ctx) return;
     const o = this.ctx.createOscillator();
     o.type = type;
@@ -65,6 +66,7 @@ export class AudioEngine {
     o.start(); o.stop(this.ctx.currentTime + dur);
   }
   noise(dur, gain = 0.1, filterFreq = 1000, attack = 0.005) {
+    if (this.enabled === false) return;
     this.ensure(); if (!this.ctx) return;
     const len = Math.floor(this.ctx.sampleRate * dur);
     const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
@@ -97,9 +99,10 @@ export class AudioEngine {
 
   // ====== Music loop (simple, no assets) ======
   startMusic(track) {
+    if (this.enabled === false) return;
+    if (this._musicTrack === track) return;   // idempotent — re-entering a scene must not stack loops
     this.ensure(); if (!this.ctx) return;
-    if (this.music) { try { this.music.stop(); } catch {} }
-    this.music = { stop: () => {} };
+    this.stopMusic();                          // kill the previous loop's pending nodes
     this._musicTrack = track;
     this._musicT = 0;
     this._musicStep = 0;
@@ -153,11 +156,19 @@ export class AudioEngine {
       const g = this.ctx.createGain(); g.gain.value = 0.18;
       src.connect(filt); filt.connect(g); g.connect(this.musicGain);
       src.start(when);
+      this._musicNodes.push(src);
     }
-    // Schedule the next loop
+    // Schedule the next loop. The loop is 16 steps of beat/2 = 8 beats; the
+    // old beat*16 timer waited a full 16 beats, so music died for half of
+    // every cycle. Reschedule just before the 8-beat loop ends.
     setTimeout(() => {
-      if (this._musicTrack === t) this._scheduleMusic();
-    }, beat * 16 * 1000 - 200);
+      if (this._musicTrack === t && this.enabled !== false) this._scheduleMusic();
+    }, beat * 8 * 1000 - 200);
   }
-  stopMusic() { this._musicTrack = null; if (this.music) { try { this.music.stop(); } catch {} } }
+  stopMusic() {
+    this._musicTrack = null;
+    this.music = null;
+    for (const n of this._musicNodes || []) { try { n.stop(); } catch {} }
+    this._musicNodes = [];
+  }
 }

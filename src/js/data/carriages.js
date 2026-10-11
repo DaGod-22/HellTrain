@@ -11,7 +11,7 @@ export const TRAIN_CARRIAGE_MODULES = [
     apply: (train) => { train.mountRandomWeapon(); },
   },
   {
-    id: 'ammo', name: 'Ammo Car', icon: 'fan',
+    id: 'ammo', name: 'Ammo Car', icon: 'fan', reqLevel: 3,
     desc: 'All train weapons fire +25% faster.', tier: 2,
     apply: (train) => { train.fireRate *= 1.25; },
   },
@@ -21,17 +21,17 @@ export const TRAIN_CARRIAGE_MODULES = [
     apply: (train) => { train.repairRate = (train.repairRate || 0) + 4; },
   },
   {
-    id: 'engine', name: 'Engine Car', icon: 'train',
+    id: 'engine', name: 'Engine Car', icon: 'train', reqLevel: 4,
     desc: 'Ultimate charges +35% faster.', tier: 2,
     apply: (train) => { train.energyRate *= 1.35; },
   },
   {
-    id: 'loot', name: 'Vault Car', icon: 'coin',
+    id: 'loot', name: 'Vault Car', icon: 'coin', reqLevel: 5,
     desc: '+30% coin loot from every kill.', tier: 2,
     apply: (train) => { train.lootBonus = (train.lootBonus || 0) + 0.3; },
   },
   {
-    id: 'plating', name: 'Plated Car', icon: 'shield',
+    id: 'plating', name: 'Plated Car', icon: 'shield', reqLevel: 6,
     desc: '+250 train HP and +6 armour.', tier: 2,
     apply: (train) => { train.maxHp += 250; train.hp += 250; train.armour += 6; },
   },

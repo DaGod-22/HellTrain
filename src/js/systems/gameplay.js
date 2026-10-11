@@ -23,6 +23,9 @@ import { checkSynergies } from '../data/upgrades_bridge.js';
 import { WEAPONS, findWeapon } from '../data/weapons.js';
 import { addCoins, saveSave, recordLocalScore } from '../core/save.js';
 import { SOUNDS } from '../core/sound.js';
+import { addPlayerXp, unlockedWeapons } from './levels.js';
+import { CrazyGames } from './crazygames.js';
+import { AUTH } from './auth.js';
 import { masteryMult } from '../data/mastery.js';
 import { bumpGoal } from '../data/goals.js';
 import { drawCard, drawPanel, drawBar, drawIcon, text, textC } from '../ui/widgets.js';
@@ -185,6 +188,10 @@ export class GameplayScene {
   enter(params = {}) {
     const engine = this.engine;
     this.save = params.save || engine.save;
+    // Hand audio over to the run: the depot's menu loop must not bleed into
+    // the sector (in-run THEME music is scheduled by _updateMusic via SOUNDS).
+    try { engine.audio?.stopMusic?.(); } catch {}
+    try { CrazyGames.gameplayStart(); } catch {}
     this.realmId = params.realmId || 'purgatory';
     this.stage = params.stage || 1;
     this.difficulty = findDifficulty(params.difficulty || engine._difficulty || 'normal');
@@ -194,6 +201,12 @@ export class GameplayScene {
 
     this.fx = new FXSystem(3000, this.art);
     this.camera = new GameCamera(CFG.VIEW_W, CFG.VIEW_H, 2);
+    // Screen-shake wiring: settings.shake gates the camera trauma, and
+    // fx.shakeScreen now bridges into the camera (nothing used to consume
+    // fx.shake, so those calls were visual no-ops).
+    this.fx.camera = this.camera;
+    this.camera.shakeEnabled = (this.save.settings?.shake ?? 1) !== 0;
+    this.fx.shakeEnabled = this.camera.shakeEnabled;
     this.time = new TimeFlow();
     this.renderer.settings.bloom = this.save.settings?.bloom ?? 1;
     this.renderer.settings.lighting = this.save.settings?.lighting ?? 1;
@@ -757,7 +770,7 @@ export class GameplayScene {
   _grantRandomWeapon() {
     // v1.6: no more lottery — you SEE three named weapons and pick one
     const p = this.player;
-    const pool = WEAPONS.filter(w => !p.hasWeapon(w.id) && !w.req);
+    const pool = unlockedWeapons(this.save, WEAPONS.filter(w => !p.hasWeapon(w.id) && !w.req));
     if (pool.length && p.weapons.length < 4) {
       const opts = [];
       const bag = pool.slice();
@@ -1122,32 +1135,45 @@ export class GameplayScene {
     }
   }
 
-  // TOUCH CONTROLS — pause pill, dash ring, furnace ring (touch only)
+  // ON-SCREEN CONTROLS — pause pill, dash ring, ultimate/furnace ring.
+  // _ctl() is the single source of truth: _drawHUD paints exactly these
+  // circles and the click tests read them. (The old buttons were hit-tested
+  // for touch only — and never drawn at all, so they were invisible.)
+  _ctl() {
+    const H = CFG.VIEW_H;
+    return {
+      pause: { x: 16, y: 30, r: 12 },   // under the LV tag, left of the HP bar
+      dash:  { x: 157, y: H - 19, r: 14 },  // bottom band: right of the weapon row,
+      fire:  { x: 191, y: H - 19, r: 14 },  // left of the minimap, under the train panel
+    };
+  }
   _updateTouchButtons() {
     const input = this.input;
-    if (!input.touchSeen || this.cards || this.routeCards || this.wPick) return;
-    const H = CFG.VIEW_H, W = CFG.VIEW_W;
-    const dash = { x: W - 34, y: H - 40, r: 20 };
-    const fire = { x: W - 78, y: H - 34, r: 15 };
-    const pause = { x: 16, y: 24, r: 12 };
+    if (this.cards || this.routeCards || this.wPick) return;
+    const C = this._ctl();
     const tapped = input.mouse.justDown;
     const inR = (b, x, y) => (x - b.x) ** 2 + (y - b.y) ** 2 <= b.r * b.r;
     // pause pill (mouse users get it too — discoverable, top-left)
-    if (tapped && inR(pause, input.mouse.x, input.mouse.y)) {
+    if (tapped && inR(C.pause, input.mouse.x, input.mouse.y)) {
       input.endFrame();
-      this.engine.setScene('pause', { from: 'gameplay', ctx: this });
+      this.engine.setScene('pause', { from: 'gameplay', ctx: { gameplay: this } });
       return;
     }
     if (input.joy) return; // the steering thumb doesn't press buttons
-    if (tapped && inR(dash, input.mouse.x, input.mouse.y)) {
+    if (tapped && inR(C.dash, input.mouse.x, input.mouse.y)) {
       const ab = this.player.abilities[0];
-      if (ab) this._useAbility(ab);
+      const st = ab && this.player.abilityStates[ab.id];
+      if (ab && st && st.cd <= 0) {   // same cooldown gate the keyboard path has
+        st.cd = ab.cd;
+        this._useAbility(ab);
+      }
       input.mouse.justDown = false;
       return;
     }
-    if (tapped && inR(fire, input.mouse.x, input.mouse.y)) {
-      if (!this.train.dead && this.train.energy >= this.train.maxEnergy) this.train.activateUltimate(this, false);
-      else if (this.train.furnace >= this.train.furnaceMax &&
+    if (tapped && inR(C.fire, input.mouse.x, input.mouse.y)) {
+      if (!this.train.dead && this.train.energy >= this.train.maxEnergy && !this.train.overdrive) {
+        this.train.activateUltimate(this, false);
+      } else if (this.train.furnace >= this.train.furnaceMax &&
           dist(this.player.x, this.player.y, this.train.x, this.train.y) < 90) {
         this._furnaceBurst();
       }
@@ -1510,7 +1536,7 @@ export class GameplayScene {
   // ================================================================
   update(rawDt) {
     const input = this.input;
-    if (input.wasPressed('Escape')) { input.endFrame(); this.engine.setScene('pause', { from: 'gameplay', ctx: this }); return; }
+    if (input.wasPressed('Escape')) { input.endFrame(); this.engine.setScene('pause', { from: 'gameplay', ctx: { gameplay: this } }); return; }
 
     // --- card overlay owns the frame ---
     if (this.cards) {
@@ -1942,6 +1968,7 @@ export class GameplayScene {
   _endRun(victory, extra = {}) {
     if (this._ended) return;
     this._ended = true;
+    try { CrazyGames.gameplayStop(); } catch {}
     const p = this.player;
     addCoins(this.save, this.runCoins);
     // v1.7: shards collected in the run are banked too (they used to evaporate)
@@ -1952,11 +1979,18 @@ export class GameplayScene {
     this.save.stats.longestRun = Math.max(this.save.stats.longestRun || 0, this.runTime);
     this.save.stats.highestStage = Math.max(this.save.stats.highestStage || 0, this.stage);
     this.save.stats.bestCombo = Math.max(this.save.stats.bestCombo || 0, this.runStats.bestCombo);
+    // v1.9: conductor XP — every run levels the meta profile and pays
+    // coins+shards on level-up (addPlayerXp also sets the home banner).
+    const runXp = 20 + this.stage * 30 + (this.runStats.kills || 0)
+      + Math.floor((p.score || 0) / 500) + (victory ? 150 : 0);
+    const lvG = addPlayerXp(this.save, runXp);
     // OFFLINE-FIRST RECORDS: this device remembers your best runs, weeks, days
     try {
       recordLocalScore(this.save, {
         score: p.score || 0, time: Math.round(this.runTime), stage: this.stage,
-        realm: this.realmId, kills: this.runStats.kills, at: Date.now(),
+        realm: this.realmId, difficulty: this.difficulty?.id || 'normal',
+        kills: this.runStats.kills, at: Date.now(),
+        name: (AUTH.getCurrentUser() && AUTH.getCurrentUser().username) || 'CONDUCTOR',
       });
       if (this.weeklyChallenge) {
         const wk = Math.floor((Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate()) / 86400000) / 7);
@@ -1969,6 +2003,12 @@ export class GameplayScene {
       }
     } catch {}
     saveSave(this.save);
+    if (lvG.levels.length) {
+      this.bannerQueue = this.bannerQueue || [];
+      this.bannerQueue.push('CONDUCTOR LEVEL UP → LV ' + this.save.playerLevel
+        + ' · +' + lvG.coins + ' COINS +' + lvG.shards + ' SHARDS');
+      try { SOUNDS.levelup(); } catch {}
+    }
     // v1.7: scores are NEVER posted automatically — the summary offers
     // an opt-in button. Nothing leaves this device without a choice.
     this.engine.setScene('runSummary', {
@@ -1993,6 +2033,11 @@ export class GameplayScene {
       if (got.includes(id)) return;
       got.push(id);
       try { SOUNDS.chest(); } catch {}
+      const lvG2 = addPlayerXp(this.save, 40);
+      if (lvG2.levels.length) {
+        this.bannerQueue = this.bannerQueue || [];
+        this.bannerQueue.push('LEVEL UP! LV ' + this.save.playerLevel + ' · +' + lvG2.coins + ' COINS');
+      }
       const def = achDef(id);
       const bounty = def && def.reward ? def.reward : 0;
       if (bounty > 0) {
@@ -3131,8 +3176,10 @@ export class GameplayScene {
       wx += 22;
     }
 
-    // ---- train status (bottom-right) — furnace + carriage loadout on show ----
-    const tw = 90, tx = W - tw - 6, ty = H - 42;
+    // ---- train status — furnace + carriage loadout on show ----
+    // Sits LEFT of the minimap (x≈110..202): the old right-edge position
+    // (x174..264) was buried under the minimap box drawn a moment later.
+    const tw = 90, tx = W - 64 - tw - 6, ty = H - 86;
     ctx.fillStyle = '#000000aa'; ctx.fillRect(tx - 2, ty - 2, tw + 4, 40);
     text(ctx, this.train.set.skin.name.toUpperCase().slice(0, 14), tx, ty + 5, '#cfd4e0', 6, true);
     drawBar(ctx, tx, ty + 8, tw, 5, this.train.hp / this.train.maxHp, '#74c04a', '#0e2410');
@@ -3160,10 +3207,10 @@ export class GameplayScene {
       }
     }
 
-    // ---- active buffs (compact) ----
+    // ---- active buffs (compact) — top-left column, clear of the weapon row ----
     let by = H - 34;
-    if (this.buffs.dmgT > 0) { text(ctx, 'SURGE ' + Math.ceil(this.buffs.dmgT) + 's', tx - 8, by, '#2ff0ff', 6, true); by -= 10; }
-    if (this.buffs.xpT > 0) { text(ctx, 'FAVOR ' + Math.ceil(this.buffs.xpT) + 's', tx - 8, by, '#c07aff', 6, true); by -= 10; }
+    if (this.buffs.dmgT > 0) { text(ctx, 'SURGE ' + Math.ceil(this.buffs.dmgT) + 's', 8, by, '#2ff0ff', 6, true); by -= 10; }
+    if (this.buffs.xpT > 0) { text(ctx, 'FAVOR ' + Math.ceil(this.buffs.xpT) + 's', 8, by, '#c07aff', 6, true); by -= 10; }
     if (this.player.rootT > 0) { textC(ctx, 'ROOTED', W / 2, H - 44, '#7ae06a', 7, true); }
 
     // ---- waypoint arrow (edge pointer to the objective) ----
@@ -3234,6 +3281,33 @@ export class GameplayScene {
       ctx.fillStyle='#8ef0ff'; ctx.font='bold 5px monospace'; ctx.textAlign='center';
       ctx.fillText('∞ MAP', mx+ms/2, my+ms+10);
       ctx.textAlign='left';
+    }
+
+    // ---- on-screen controls: finally visible, and they answer mouse AND touch ----
+    {
+      const C = this._ctl();
+      const m = this.input.mouse;
+      const over = (b) => (m.x - b.x) ** 2 + (m.y - b.y) ** 2 <= b.r * b.r;
+      const ring = (b, color, txt, dim) => {
+        const hov = over(b);
+        ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU);
+        ctx.fillStyle = hov ? 'rgba(48,44,68,0.9)' : 'rgba(12,10,24,0.65)';
+        ctx.fill();
+        ctx.lineWidth = hov ? 2 : 1.2;
+        ctx.strokeStyle = dim ? '#4a4658' : color;
+        ctx.stroke();
+        textC(ctx, txt, b.x, b.y + (txt.length > 2 ? 2 : 3), dim ? '#8a86a0' : color, txt.length > 2 ? 6 : 8, true);
+      };
+      ring(C.pause, '#cfd4e0', 'II', false);
+      const ab = this.player.abilities[0];
+      const st = ab && this.player.abilityStates[ab.id];
+      ring(C.dash, '#8ef0ff', 'SPC', !(st && st.cd <= 0));
+      const ultReady = !this.train.dead && this.train.energy >= this.train.maxEnergy && !this.train.overdrive;
+      const furnaceReady = this.train.furnace >= this.train.furnaceMax && !this.train.overdrive
+        && dist(this.player.x, this.player.y, this.train.x, this.train.y) < 90;
+      if (ultReady) ring(C.fire, '#28f0e0', 'Q', false);
+      else if (furnaceReady) ring(C.fire, '#ffd040', 'E', false);
+      else ring(C.fire, '#c9a24a', 'QE', true);
     }
 
     // ---- boss bar ----
