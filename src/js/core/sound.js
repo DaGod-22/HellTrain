@@ -82,6 +82,12 @@ export class SoundSystem {
     this.playTone(120,0.4*size,'sawtooth',0.4*size,0.3);
   }
   dash() { this.playTone(200,0.2,'sawtooth',0.2,3); }
+  // Called when the throttle drops and a run departs the depot.
+  depart() {
+    this.playTone(180, 0.5, 'sawtooth', 0.3, 0.6);
+    this.playNoise(0.4, 0.2, 700);
+    setTimeout(()=>this.playTone(360, 0.4, 'square', 0.25, 1.4), 150);
+  }
   chest() {
     this.playTone(500,0.2,'triangle',0.3,1.5);
     setTimeout(()=>this.playTone(700,0.3,'triangle',0.3,1.8),120);

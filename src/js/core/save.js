@@ -85,6 +85,13 @@ export function newSave() {
     seasonRewards: {},
     myBoards: {},
     claimedAchievements: [],
+    // v1.9: conductor level (meta progression), seen-hints (tutorials),
+    // level-up banner + offline leaderboard boards per realm|diff|month
+    playerLevel: 1,
+    playerXp: 0,
+    hints: {},
+    levelUpNotice: null,
+    localBoards: {},
   };
 }
 
@@ -134,4 +141,41 @@ export function recordLocalScore(save, entry) {
   save.localScores.push(entry);
   save.localScores.sort((a, b) => b.score - a.score);
   save.localScores.length = Math.min(save.localScores.length, 10);
+  // v1.9: also file the run under its leaderboard key so the
+  // LEADERBOARD page has real rows even with no network.
+  try {
+    const d = new Date();
+    const ym = d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
+    const key = [entry.realm || 'purgatory', entry.difficulty || 'normal', ym].join('|');
+    const row = {
+      name: entry.name || 'CONDUCTOR', score: Math.round(entry.score || 0),
+      stage: entry.stage || 1, kills: entry.kills || 0, at: entry.at || Date.now(),
+    };
+    save.localBoards = save.localBoards || {};
+    const rows = (save.localBoards[key] || []).concat([row])
+      .sort((a, b) => (b.score || 0) - (a.score || 0));
+    save.localBoards[key] = rows.slice(0, 20);
+  } catch {}
+}
+// rows for this month's board (offline view of the LEADERBOARD page)
+export function localBoardRows(save, realm, difficulty) {
+  const d = new Date();
+  const ym = d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
+  const key = [realm || 'purgatory', difficulty || 'normal', ym].join('|');
+  return ((save || {}).localBoards || {})[key] || [];
+}
+// where does this entry sit on the local board? (offline POST ranks locally)
+export function localBoardRank(save, entry) {
+  const rows = localBoardRows(save, entry?.realm, entry?.difficulty);
+  const i = rows.findIndex(r =>
+    Math.round(r.score || 0) === Math.round(entry?.score || 0) &&
+    (r.stage || 1) === (entry?.stage || 1) &&
+    (r.name || 'CONDUCTOR') === (entry?.name || 'CONDUCTOR'));
+  if (i >= 0) return i + 1;
+  const at = entry?.at || 0;
+  if (at) {
+    const j = rows.findIndex(r => (r.at || 0) === at);
+    if (j >= 0) return j + 1;
+  }
+  return null;
 }

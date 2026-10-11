@@ -238,12 +238,16 @@ export class GameCamera {
     this.x = 0; this.y = 0;
     this.zoom = Math.max(1, Math.round(zoom)); this.baseZoom = this.zoom; this.zoomPunch = 0;
     this.trauma = 0; this.traumaDecay = 1.6;
+    this.shakeEnabled = true;   // synced from save.settings.shake
     this.rot = 0;
     this.t = 0;
     this.offX = 0; this.offY = 0;
     this.lookX = 0; this.lookY = 0;
   }
-  shake(amount) { this.trauma = Math.min(1, this.trauma + amount); }
+  shake(amount) {
+    if (this.shakeEnabled === false) return;
+    this.trauma = Math.min(1, this.trauma + amount);
+  }
   punch(amount) { this.zoomPunch = Math.min(0.35, this.zoomPunch + amount); }
   follow(x, y, dt, vx = 0, vy = 0) {
     this.lookX += ((vx * 0.12) - this.lookX) * Math.min(1, dt * 3);

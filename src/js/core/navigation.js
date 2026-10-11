@@ -34,9 +34,11 @@ export function installGlobalNavigation(engine) {
     const p = point(e);
     if (!p) return;
     const scene = engine.current;
-    // Gameplay has its own pause/control layer; the shared menu chrome is
-    // only authoritative on Page-based screens.
-    if (!scene || !scene.save || scene.constructor?.name === 'GameplayScene') return;
+    // The shared chrome (BACK + purse chips) only exists on kit-Page style
+    // screens that opt in via `chromeTopBar`. Gameplay draws its own
+    // pause/control layer, and Home/Pause/RunSummary/Tutorial draw custom
+    // top bars whose buttons would otherwise collide with these hotspots.
+    if (!scene || !scene.save || scene.chromeTopBar !== true) return;
 
     if (hit(p.x, p.y, TOP.back)) {
       e.preventDefault();
@@ -52,7 +54,7 @@ export function installGlobalNavigation(engine) {
       e.stopPropagation();
       if (scene.constructor?.name !== 'CoinShopScene') {
         saveSave(scene.save);
-        engine.setScene('coinShop', { save: scene.save, from: scene.constructor?.name || 'page' });
+        engine.setScene('coinShop', { save: scene.save, from: engine.currentName || 'menu' });
       }
     }
   }, true);

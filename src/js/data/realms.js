@@ -168,13 +168,13 @@ export const RELICS = [
 export const ARMOURS = [
   { id: 'guardian', name: 'Guardian', desc: '+5 Armour, +20 HP.',
     sprite: 'playerArmour', apply: (p) => { p.armour += 5; p.maxHp += 20; } },
-  { id: 'phantom', name: 'Phantom', desc: '+20% Move Speed, +10% Dodge.',
+  { id: 'phantom', name: 'Phantom', desc: '+20% Move Speed, +10% Dodge.', reqLevel: 3,
     sprite: 'playerDown', apply: (p) => { p.modMult('moveSpd', 1.20); p.dodge += 0.10; } },
-  { id: 'infernal', name: 'Infernal', desc: 'Fire damage +30%.',
+  { id: 'infernal', name: 'Infernal', desc: 'Fire damage +30%.', reqLevel: 5,
     sprite: 'playerDown', apply: (p) => { p.modMult('atkDmg', 1.15); p.modWeapon('fireball', 'dmg', 1.30); } },
-  { id: 'void_armour', name: 'Void', desc: 'Critical damage +50%, chance +5%.',
+  { id: 'void_armour', name: 'Void', desc: 'Critical damage +50%, chance +5%.', reqLevel: 7,
     sprite: 'playerArmour', apply: (p) => { p.crit += 0.05; p.modMult('critDmg', 1.50); } },
-  { id: 'conductor', name: 'Conductor', desc: 'Train damage +40%, repair +50%.',
+  { id: 'conductor', name: 'Conductor', desc: 'Train damage +40%, repair +50%.', reqLevel: 9,
     sprite: 'playerArmour', apply: (p) => { p.modMult('trainDmg', 1.40); p.trainRepairRate += 0.5; } },
 ];
 
